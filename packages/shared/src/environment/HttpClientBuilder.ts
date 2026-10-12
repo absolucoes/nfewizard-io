@@ -39,7 +39,7 @@ class HttpClientBuilder<T> {
                 headers: {
                     'Content-Type': 'text/xml; charset=utf-8',
                 },
-                httpsAgent: this.agent,
+                agent: this.agent,
                 timeout: this.config.lib?.connection?.timeout || 60000, // Timeout padrão de 60 segundos se não for configurado
             };
 
