@@ -1,0 +1,16 @@
+{
+  "_observacao": "Fixture tributária fictícia apenas para teste estrutural. Não é parâmetro de produção nem classificação fiscal validada.",
+  "imp": {
+    "IBSCBS": {
+      "CST": "000",
+      "cClassTrib": "000001",
+      "gIBSCBS": {
+        "vBC": "100.00",
+        "gIBSUF": { "pIBSUF": "0.1000", "vIBSUF": "0.10" },
+        "gIBSMun": { "pIBSMun": "0.0000", "vIBSMun": "0.00" },
+        "vIBS": "0.10",
+        "gCBS": { "pCBS": "0.9000", "vCBS": "0.90" }
+      }
+    }
+  }
+}

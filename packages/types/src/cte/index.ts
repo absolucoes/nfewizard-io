@@ -23,3 +23,4 @@ export * from './CTERecepcaoEvento.js';
 export * from './CTEAutorizacaoOS.js';
 export * from './GTVeAutorizacao.js';
 export * from './CTESimplificadoAutorizacao.js';
+export * from './CTEEventoCancCCe.js';

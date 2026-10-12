@@ -101,12 +101,18 @@ importers:
       date-fns:
         specifier: ^2.30.0
         version: 2.30.0
+      libxmljs2:
+        specifier: ^0.37.0
+        version: 0.37.0
       pako:
         specifier: ^2.1.0
         version: 2.2.0
       xml2js:
         specifier: ^0.6.2
         version: 0.6.2
+      xsd-assembler:
+        specifier: ^0.0.3
+        version: 0.0.3(typescript@5.9.3)
     optionalDependencies:
       '@nfewizard/danfe':
         specifier: workspace:*

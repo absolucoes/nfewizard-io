@@ -22,6 +22,7 @@ import { CTe, CTeAutorizacaoResultado, CTeAutorizacaoResultadoItem, LayoutCTe } 
 import { CTE_VERSAO } from '../util/CTEBaseService.js';
 import { TP_EMIS, TP_EMIS_CONTINGENCIA } from '../util/CTeContingencia.js';
 import { gerarQrCodeCTe } from '../util/CTeQrCode.js';
+import { SCHEMA_POR_RAIZ, validarXmlCte } from '../util/CTeSchema.js';
 
 const METHOD_NAME = 'CTeAutorizacao';
 
@@ -148,6 +149,23 @@ export class CTEAutorizacaoService extends BaseNFE implements CTEAutorizacaoServ
         } as T;
     }
 
+    /**
+     * `ide/toma4` do schema: `toma`, depois `CNPJ`|`CPF`, `IE`, `xNome`, ... Como `normalizaParticipante`
+     * põe o documento na frente, aplicá-la direto a `toma4` deixava `CNPJ` antes de `toma` e o XSD recusava
+     * (tomador "outros"). Aqui `toma` fica primeiro e o documento logo depois.
+     */
+    protected normalizaToma4<T extends { toma?: number | string; CNPJCPF?: string; CNPJ?: string; CPF?: string }>(toma4: T): T {
+        const { toma, ...participante } = toma4 as any;
+        const normalizado = this.normalizaParticipante(participante, 'tomador');
+        return (toma === undefined ? normalizado : { toma, ...normalizado }) as T;
+    }
+
+    /** Valida o XML assinado no XSD do documento (por tag raiz) antes de transmitir: erro local em vez de rejeição 215 da SEFAZ. */
+    protected async validarSchema(xmlAssinado: string): Promise<void> {
+        const schema = SCHEMA_POR_RAIZ[this.rootTag];
+        if (schema) await validarXmlCte(xmlAssinado, schema);
+    }
+
     private compactarXml(xml: string): string {
         const compressed = pako.gzip(xml);
         let binaryString = '';
@@ -168,7 +186,7 @@ export class CTEAutorizacaoService extends BaseNFE implements CTEAutorizacaoServ
         if (infCte.dest) infCte.dest = this.normalizaParticipante(infCte.dest, 'destinatário');
         if (infCte.exped) infCte.exped = this.normalizaParticipante(infCte.exped, 'expedidor');
         if (infCte.receb) infCte.receb = this.normalizaParticipante(infCte.receb, 'recebedor');
-        if (infCte.ide.toma4) infCte.ide.toma4 = this.normalizaParticipante(infCte.ide.toma4, 'tomador');
+        if (infCte.ide.toma4) infCte.ide.toma4 = this.normalizaToma4(infCte.ide.toma4);
     }
 
     /**
@@ -310,6 +328,7 @@ export class CTEAutorizacaoService extends BaseNFE implements CTEAutorizacaoServ
 
         try {
             xmlAssinado = this.gerarXml(cte);
+            await this.validarSchema(xmlAssinado);
             xmlCompactado = this.compactarXml(xmlAssinado);
 
             const { xmlFormated, agent, webServiceUrl, action } = await this.gerarConsulta.gerarConsulta(

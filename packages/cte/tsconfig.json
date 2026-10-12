@@ -3,12 +3,23 @@
   "compilerOptions": {
     "outDir": "./dist",
     "composite": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "declaration": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*",
+    "src/config/**/*.json",
+    "examples/**/*.json"
+  ],
   "references": [
-    { "path": "../types" },
-    { "path": "../shared" }
+    {
+      "path": "../types"
+    },
+    {
+      "path": "../shared"
+    }
   ]
 }

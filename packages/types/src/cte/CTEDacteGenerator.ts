@@ -449,6 +449,8 @@ export type VPrest = {
      * @param {number | string} vTPrest - Valor total da prestação do serviço
      */
     vTPrest?: number | string;
+    /** Valor líquido da prestação sem tributos (NT 2026.004 RTC). */
+    vPrestLiq?: number | string;
     /**
      * @param {number | string} vRec - Valor a receber
      */
@@ -470,7 +472,44 @@ export type CompCTe = {
     vComp?: number | string;
 };
 
+export type IBSCBSCTe = {
+    CST: string;
+    cClassTrib: string;
+    indDoacao?: number | string;
+    gIBSCBS?: {
+        vBC: number | string;
+        gIBSUF: { pIBSUF: number | string; vIBSUF: number | string; [campo: string]: unknown };
+        gIBSMun: { pIBSMun: number | string; vIBSMun: number | string; [campo: string]: unknown };
+        vIBS: number | string;
+        gCBS: { pCBS: number | string; vCBS: number | string; [campo: string]: unknown };
+        [campo: string]: unknown;
+    };
+    gEstornoCred?: Record<string, unknown>;
+};
+
+/** Totais IBS/CBS publicados no leiaute RTC do CT-e. */
+export type IBSCBSTotCTe = {
+    vBCIBSCBS: number | string;
+    gIBS: {
+        gIBSUF: { vIBSUF: number | string };
+        gIBSMun: { vIBSMun: number | string };
+        vIBS: number | string;
+    };
+    gCBS: { vCBS: number | string };
+    [campo: string]: unknown;
+};
+
+export type InfCTeNormTotal = {
+    vTPrest: number | string;
+    vTPrestLiq?: number | string;
+    vTRec: number | string;
+    IBSCBSTot?: IBSCBSTotCTe;
+    vTotDFe?: number | string;
+};
+
 export type ImpCTe = {
+    /** Grupo de tributação do IBS e da CBS (RTC). */
+    IBSCBS?: IBSCBSCTe;
     /**
      * @param {ICMSCTe} ICMS - Informações relativas ao ICMS
      */
@@ -788,6 +827,7 @@ export type PeriodoEntregaCTe = {
 };
 
 export type InfCTeNorm = {
+    total?: InfCTeNormTotal;
     /**
      * @param {InfCarga} infCarga - Informações da carga do CT-e
      */

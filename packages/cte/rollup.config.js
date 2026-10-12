@@ -16,6 +16,7 @@ function isExternal(id) {
   if (id.startsWith('axios')) return true;
   if (id.startsWith('date-fns')) return true;
   if (id.startsWith('xml2js')) return true;
+  if (id.startsWith('libxmljs2') || id.startsWith('xsd-assembler')) return true;
   
   return false;
 }

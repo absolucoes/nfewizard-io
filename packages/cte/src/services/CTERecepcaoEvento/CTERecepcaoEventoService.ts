@@ -15,7 +15,7 @@
  * along with NFeWizard-io. If not, see <https://www.gnu.org/licenses/>.
  */
 import { AxiosInstance } from 'axios';
-import { format } from 'date-fns';
+import { agoraComOffsetBrasilia } from '../util/DhEventoBrasilia.js';
 import { Environment, Utility, XmlBuilder, logger } from '@nfewizard/shared';
 import { GerarConsultaImpl, SaveFilesImpl, CTERecepcaoEventoServiceImpl } from '@nfewizard/types/shared';
 import { EventoCTe, TipoEventoCTe, CTeEventoResultado } from '@nfewizard/types/cte';
@@ -157,7 +157,7 @@ export class CTERecepcaoEventoService extends CTEBaseService implements CTERecep
                 tpAmb: ambiente,
                 ...autor,
                 chCTe,
-                dhEvento: dhEvento || format(new Date(), "yyyy-MM-dd'T'HH:mm:ssxxx"),
+                dhEvento: dhEvento || agoraComOffsetBrasilia(),
                 tpEvento,
                 nSeqEvento,
                 detEvento: {

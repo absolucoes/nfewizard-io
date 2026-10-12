@@ -31,6 +31,7 @@ export { GTVeAutorizacao } from './operations/GTVeAutorizacao/GTVeAutorizacao.js
 export { CTESimplificadoAutorizacao } from './operations/CTESimplificadoAutorizacao/CTESimplificadoAutorizacao.js';
 export { CTEConsultaCadastro } from './operations/CTEConsultaCadastro/CTEConsultaCadastro.js';
 export { CTECancelamento } from './operations/CTERecepcaoEvento/CTECancelamento.js';
+export { CTEEventoCancCCe } from './operations/CTERecepcaoEvento/CTEEventoCancCCe.js';
 export { CTECartaDeCorrecao } from './operations/CTERecepcaoEvento/CTECartaDeCorrecao.js';
 export { CTEEpec } from './operations/CTERecepcaoEvento/CTEEpec.js';
 export { CTERegistroMultimodal } from './operations/CTERecepcaoEvento/CTERegistroMultimodal.js';
@@ -56,6 +57,9 @@ export { CTESimplificadoAutorizacaoService } from './services/CTESimplificadoAut
 export { CTEConsultaCadastroService } from './services/CTEConsultaCadastro/CTEConsultaCadastroService.js';
 export { CTERecepcaoEventoService } from './services/CTERecepcaoEvento/CTERecepcaoEventoService.js';
 export { CTECancelamentoService } from './services/CTERecepcaoEvento/CTECancelamentoService.js';
+export { CTEEventoCancCCeService } from './services/CTERecepcaoEvento/CTEEventoCancCCeService.js';
+export { validarXmlCte } from './services/util/CTeSchema.js';
+export { agoraComOffsetBrasilia } from './services/util/DhEventoBrasilia.js';
 export { CTECartaDeCorrecaoService } from './services/CTERecepcaoEvento/CTECartaDeCorrecaoService.js';
 export { CTEEpecService } from './services/CTERecepcaoEvento/CTEEpecService.js';
 export { TP_EMIS, tpEmisDaChave, chaveEmSvc } from './services/util/CTeContingencia.js';

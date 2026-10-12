@@ -16,7 +16,7 @@
  */
 
 import { NFeWizardProps } from '@nfewizard/types/shared';
-import { ConsultaCTe, DFePorNSUCTe, DFePorUltimoNSUCTe } from '@nfewizard/types/cte';
+import { ConsultaCTe, DFePorNSUCTe, DFePorUltimoNSUCTe, CTeCancelamento, CTeCartaCorrecao } from '@nfewizard/types/cte';
 import { Environment, Utility, XmlBuilder, GerarConsulta, SaveFiles, logger } from '@nfewizard/shared';
 import { AxiosInstance } from 'axios';
 import { CTEDistribuicaoDFeService } from './services/CTEDistribuicaoDFe/CTEDistribuicaoDFeService.js';
@@ -32,6 +32,8 @@ import { CTEAutorizacao } from './operations/CTEAutorizacao/CTEAutorizacao.js';
 import { CTe as CTeAutorizacaoData, CancelamentoCTe, CartaDeCorrecaoCTe, EpecCTe, CTeOS, GTVe, CTeSimp, RegistroMultimodalCTe, PrestacaoDesacordoCTe, CancelamentoPrestacaoDesacordoCTe, ComprovanteEntregaCTe, CancelamentoComprovanteEntregaCTe, InsucessoEntregaCTe, CancelamentoInsucessoEntregaCTe, VinculacaoPagamentoCTe, CancelamentoVinculacaoPagamentoCTe } from '@nfewizard/types/cte';
 import { CTECancelamentoService } from './services/CTERecepcaoEvento/CTECancelamentoService.js';
 import { CTECancelamento } from './operations/CTERecepcaoEvento/CTECancelamento.js';
+import { CTEEventoCancCCeService } from './services/CTERecepcaoEvento/CTEEventoCancCCeService.js';
+import { CTEEventoCancCCe } from './operations/CTERecepcaoEvento/CTEEventoCancCCe.js';
 import { CTECartaDeCorrecaoService } from './services/CTERecepcaoEvento/CTECartaDeCorrecaoService.js';
 import { CTECartaDeCorrecao } from './operations/CTERecepcaoEvento/CTECartaDeCorrecao.js';
 import { CTEEpecService } from './services/CTERecepcaoEvento/CTEEpecService.js';
@@ -326,9 +328,17 @@ export class CTEWizard {
     /**
      * Cancela um CT-e (evento 110111). Prazo: 168h após a autorização (CT-e 57/67) ou 45 dias (GTV-e),
      * salvo liberação do Fisco.
+     *
+     * Aceita duas formas de payload:
+     * - `{ evento: { tpEvento: '110111', chCTe, detEvento: { ... } } }` (forma do upstream, com array e demais tipos);
+     * - `{ chCTe, CNPJ, cOrgao, nProt, xJust, ... }` (forma plana usada pelo Vanir), que valida detalhe e evento no XSD
+     *   e devolve `{ success, eventos: [{ cStat, xMotivo, nProt, dhRegEvento }] }`.
      */
-    async CTE_Cancelamento(data: CancelamentoCTe): Promise<any> {
+    async CTE_Cancelamento(data: CancelamentoCTe | CTeCancelamento): Promise<any> {
         try {
+            if (!('evento' in data)) {
+                return await this.eventoPlano().cancelar(data);
+            }
             const service = new CTECancelamentoService(this.environment, this.utility, this.xmlBuilder, this.axios, this.saveFiles, this.gerarConsulta);
             const response = await new CTECancelamento(service).Exec(data);
             this.logEventoResultado(response);
@@ -337,6 +347,24 @@ export class CTEWizard {
             logger.error(``, error, { context: 'CTE_Cancelamento' });
             throw error;
         }
+    }
+
+    /**
+     * Carta de Correção na forma plana `{ chCTe, CNPJ, cOrgao, infCorrecao: [...] }` (mesmo retorno de
+     * `CTE_Cancelamento` na forma plana). Para a forma do upstream use `CTE_CartaDeCorrecao`.
+     */
+    async CTE_CartaCorrecao(data: CTeCartaCorrecao): Promise<any> {
+        try {
+            return await this.eventoPlano().cartaCorrecao(data);
+        } catch (error) {
+            logger.error(``, error, { context: 'CTE_CartaCorrecao' });
+            throw error;
+        }
+    }
+
+    private eventoPlano(): CTEEventoCancCCe {
+        const service = new CTEEventoCancCCeService(this.environment, this.utility, this.xmlBuilder, this.axios, this.saveFiles, this.gerarConsulta);
+        return new CTEEventoCancCCe(service);
     }
 
     /**

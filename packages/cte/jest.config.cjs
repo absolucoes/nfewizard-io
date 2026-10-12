@@ -3,10 +3,13 @@ module.exports = {
   testEnvironment: 'node',
   testPathIgnorePatterns: ['/node_modules/', '/dist/', '/\.rollup\.cache/'],
   moduleNameMapper: {
-    '^(\\.{1,2}/.*)\\.js$': '$1',
+    // import.meta não compila no ts-jest em CommonJS; o build real é coberto por `pnpm test:dist`
+    '^(\.{1,2}/)+CTeSchemaDir(\.js)?$': '<rootDir>/test-support/CTeSchemaDir.jest.ts',
+    '^\./CTeSchemaDir(\.js)?$': '<rootDir>/test-support/CTeSchemaDir.jest.ts',
+    '^(\.{1,2}/.*)\.js$': '$1',
   },
   transform: {
-    '^.+\\.ts$': ['ts-jest', {
+    '^.+\.ts$': ['ts-jest', {
       useESM: false,
       tsconfig: {
         module: 'CommonJS',
