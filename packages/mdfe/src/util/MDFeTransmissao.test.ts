@@ -8,9 +8,9 @@ describe('fluxo de recepção síncrona MDF-e', () => {
   });
 
   it('coloca o payload Base64 na operação SOAP de autorização', () => {
-    const envelope = montarEnvelopeSoapMdfe('H4sI-test==', 'MDFeRecepcaoSinc');
-    expect(envelope).toContain('<MDFeRecepcaoSinc ');
-    expect(envelope).toContain('<mdfeDadosMsg>H4sI-test==</mdfeDadosMsg>');
+    const envelope = montarEnvelopeSoapMdfe('H4sI-test==', 'MDFeRecepcaoSinc', '52');
+    expect(envelope).not.toContain('<MDFeRecepcaoSinc');
+    expect(envelope).toContain('<mdfeDadosMsg xmlns="http://www.portalfiscal.inf.br/mdfe/wsdl/MDFeRecepcaoSinc">H4sI-test==</mdfeDadosMsg>');
   });
 
   it('monta mdfeProc quando a resposta simulada contém cStat 100', async () => {
