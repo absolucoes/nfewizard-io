@@ -1,0 +1,65 @@
+name: Publicar fork Vanir no GitHub Packages
+
+# Tag `vanir-v<N>` publica os seis pacotes com o mesmo N:
+#   @absolucoes/nfewizard-{io,shared,types,cte,mdfe,danfe}@<versão do upstream>-vanir.<N>   (dist-tag `vanir`, restrito)
+# Substitui publish-vanir-cte.yml e publish-vanir-mdfe.yml.
+#
+# Falha no meio da publicação (um pacote já subiu, outro não) não se repete com o mesmo N: o registro recusa
+# versão repetida e este fluxo também. Corrija e use o próximo N.
+on:
+  push:
+    tags:
+      - "vanir-v*"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publicar-vanir
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validar a tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "$GITHUB_REF_NAME" =~ ^vanir-v([1-9][0-9]*)$ ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' fora do formato vanir-v<N> (N inteiro positivo, sem zero à esquerda)."
+            exit 1
+          fi
+          echo "numero=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          git fetch --no-tags origin vanir/main:refs/remotes/origin/vanir/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/vanir/main; then
+            echo "::error::O commit da tag $GITHUB_REF_NAME ($GITHUB_SHA) não está em vanir/main."
+            exit 1
+          fi
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: "@absolucoes"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: N ainda não usado no registro
+        run: node scripts/vanir/publicar.mjs "${{ steps.tag.outputs.numero }}" --verificar
+      - name: Instalar, compilar e testar
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm -r build
+          pnpm -r test
+      - name: Publicar os seis pacotes
+        run: node scripts/vanir/publicar.mjs "${{ steps.tag.outputs.numero }}" --publicar

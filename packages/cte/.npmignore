@@ -32,3 +32,8 @@ node_modules/
 
 # Build cache
 .rollup.cache/
+
+# Apoio de teste do fork (não vai no pacote)
+scripts/
+jest.config.cjs
+test-support/
