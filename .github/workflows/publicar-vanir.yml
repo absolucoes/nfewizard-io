@@ -23,7 +23,7 @@ jobs:
   publicar:
     runs-on: ubuntu-latest
     env:
-      NODE_AUTH_TOKEN: ${{ github.token }}
+      NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
