@@ -145,6 +145,13 @@ function normalizeDacteParams(params: CTEGerarDacteProps | CTEGerarDactePropsFro
 }
 
 /**
+ * Opções de identidade visual do Vanir aceitas pelo gerador DACTE (logo do emitente e texto
+ * da faixa de ambiente). Já fazem parte de `CTEGerarDacteProps`; o alias existe para quem
+ * importava o nome da versão do Vanir.
+ */
+export type CTEGerarDactePropsComLogo = Pick<CTEGerarDacteProps, 'logo' | 'faixaAmbiente'>;
+
+/**
  * Gera DACTE (Documento Auxiliar do Conhecimento de Transporte Eletrônico).
  *
  * Aceita tanto o JSON do padrão da lib (`CTEGerarDacteProps`) quanto um XML

@@ -16,8 +16,7 @@
  */
 import bwipjs from 'bwip-js';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { diretorioDoModulo } from './utils/DiretorioDoModulo.js';
 import fs from 'fs';
 import { ICMS, IPI, DetProd, Ide, Dest, Emit, Total, Transp, InfAdic, Vol, ProtNFe, NFEGerarDanfeProps, Cobr } from '@nfewizard/types/nfe';
 import { format, parseISO } from 'date-fns';
@@ -26,13 +25,12 @@ import { ValidaCPFCNPJ } from '@nfewizard/shared';
 import { getCstOrCsosn } from './utils/getCstOrCsosn';
 
 // Suporte para módulos ES
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const dirDoModulo = diretorioDoModulo;
 
 // Caminho das fontes relativo ao pacote instalado
 // Rollup faz bundle em dist/index.mjs, então dist/ -> ../resources/
-const fontDir = path.resolve(__dirname, '../resources/fonts/ARIAL.TTF');
-const fontDirBold = path.resolve(__dirname, '../resources/fonts/ARIALBD.TTF');
+const fontDir = path.resolve(dirDoModulo, '../resources/fonts/ARIAL.TTF');
+const fontDirBold = path.resolve(dirDoModulo, '../resources/fonts/ARIALBD.TTF');
 
 
 class NFeGerarDanfe {
@@ -40,6 +38,8 @@ class NFeGerarDanfe {
     chave: string;
     enviada: boolean;
     outputPath: string;
+    logo: Buffer | null;
+    faixaAmbiente: string | null;
     documento: ValidaCPFCNPJ;
     protNFe: ProtNFe | undefined;
     det: DetProd | DetProd[];
@@ -56,11 +56,14 @@ class NFeGerarDanfe {
     barcodeBuffer: Buffer | null = null;
 
     constructor(props: NFEGerarDanfeProps) {
-        const { data, chave, outputPath } = props;
+        // Correção do Vanir: logo do emitente (Buffer PNG/JPEG) e texto da faixa de ambiente, ambos opcionais.
+        const { data, chave, outputPath, logo, faixaAmbiente } = props;
 
         this.data = data;
         this.chave = chave.trim();
         this.outputPath = outputPath;
+        this.logo = logo || null;
+        this.faixaAmbiente = faixaAmbiente || null;
         this.enviada = false;
         this.documento = new ValidaCPFCNPJ();
         this.protNFe = data.protNFe;
@@ -222,15 +225,27 @@ class NFeGerarDanfe {
             this.doc.fontSize(5).text(`IDENTIFICAÇÃO DO EMITENTE`, 10, topIdentificacao_1 + 3.5, {
                 characterSpacing: 0.5,
             });
-            this.doc.fontSize(8).font('Times-Bold').text(this.emit.xNome, 35, topIdentificacao_1 + 14, {
+            // Com logo, um quadro de 40x40 à esquerda (fit, sem distorcer) e o texto do emitente
+            // desloca para a direita; sem logo, exatamente o desenho original.
+            const temLogo = !!this.logo;
+            const textoEsquerda = temLogo ? 52 : 10;
+            const textoLargura = temLogo ? 139 : 181;
+            if (temLogo) {
+                this.doc.image(this.logo as Buffer, 10, topIdentificacao_1 + 14, {
+                    fit: [40, 40],
+                    align: 'center',
+                    valign: 'center',
+                });
+            }
+            this.doc.fontSize(8).font('Times-Bold').text(this.emit.xNome, temLogo ? textoEsquerda : 35, topIdentificacao_1 + 14, {
                 characterSpacing: 1,
-                width: 170,
+                width: temLogo ? textoLargura : 170,
                 lineBreak: true,
                 lineGap: 4
             });
-            this.doc.fontSize(7).font('Times-Roman').text(`${this.emit.enderEmit.xLgr}, ${this.emit.enderEmit.nro} ${this.emit.xFant ? `- ${this.emit.xFant}` : ''}`, 10, topIdentificacao_1 + 44, {
+            this.doc.fontSize(7).font('Times-Roman').text(`${this.emit.enderEmit.xLgr}, ${this.emit.enderEmit.nro} ${this.emit.xFant ? `- ${this.emit.xFant}` : ''}`, textoEsquerda, topIdentificacao_1 + 44, {
                 characterSpacing: 1,
-                width: 181,
+                width: textoLargura,
                 lineBreak: true,
                 lineGap: 2,
                 continued: true
@@ -1075,9 +1090,11 @@ class NFeGerarDanfe {
                 let pIPI = formatDecimal(IPI.IPITrib.pIPI);
                 return { vIPI, pIPI }
             }
-            const CST = getCstOrCsosn(item.imposto.ICMS as ICMS);
+            // Correção do Vanir: item autorizado sem grupo de ICMS usa o estado vazio já previsto.
+            const ICMS = (item.imposto.ICMS || {}) as ICMS;
+            const CST = getCstOrCsosn(ICMS);
             const { vIPI, pIPI } = getValoresIPI(item.imposto.IPI);
-            const { vBC, vICMS, pICMS } = getValoresItem(item.imposto.ICMS as ICMS);
+            const { vBC, vICMS, pICMS } = getValoresItem(ICMS);
 
             const text = item.infAdProd ? `${item.prod.xProd || ''}\n${item.infAdProd}` : item.prod.xProd || '';
             const textHeight = this.doc.heightOfString(text, {
@@ -1250,7 +1267,7 @@ class NFeGerarDanfe {
         }
 
         if (Number(Number(this.ide.tpAmb)) === 2) {
-            this.doc.fontSize(14).font('Times-Bold').fillColor('grey').text('AMBIENTE DE HOMOLOGAÇÃO - NF-E SEM VALOR FISCAL', left + 100, topDestinatario + 45, {
+            this.doc.fontSize(14).font('Times-Bold').fillColor('grey').text(this.faixaAmbiente || 'AMBIENTE DE HOMOLOGAÇÃO - NF-E SEM VALOR FISCAL', left + 100, topDestinatario + 45, {
                 characterSpacing: 1
             });
         }
