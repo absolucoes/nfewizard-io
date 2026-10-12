@@ -32,7 +32,8 @@
     "build": "rollup -c",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "test:dist": "node scripts/test-dist.mjs"
   },
   "dependencies": {
     "@nfewizard/shared": "workspace:*",
