@@ -1,0 +1,227 @@
+name: Sincronizar com o upstream
+
+# Traz o que o nfewizard-org/nfewizard-io publicou para `vanir/main`, sempre por PR:
+#   - master do fork avança em fast-forward a partir do upstream (espelho);
+#   - o upstream é mesclado numa branch `sincronizar/<data>` cortada de vanir/main;
+#   - verde: PR com o resumo dos commits do upstream;
+#   - teste quebrado: o mesmo PR, marcado como teste quebrado, com o log;
+#   - conflito: o mesmo PR (rascunho), descrevendo arquivos e commits, sem resolver nada.
+# Nunca empurra em vanir/main e nunca cria tag. Sem novidade, não abre PR. Só há um PR de sincronização aberto:
+# uma nova execução atualiza o que já existe.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Ref do upstream a trazer (branch, tag ou SHA). Padrão: master. Serve para ensaiar com outro ponto do upstream."
+        required: false
+        type: string
+        default: master
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sincronizar-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/nfewizard-org/nfewizard-io.git
+  REF_UPSTREAM: ${{ inputs.ref || 'master' }}
+  # PR criado com GITHUB_TOKEN exige "Allow GitHub Actions to create and approve pull requests" nas configurações do repositório
+  GH_TOKEN: ${{ secrets.GH_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  sincronizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Buscar o upstream e adiantar o master do fork
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM_URL"
+          git fetch --no-tags upstream "+refs/heads/*:refs/remotes/upstream/*" "+refs/tags/*:refs/tags/upstream/*" || git fetch --no-tags upstream
+          git fetch --no-tags origin vanir/main:refs/remotes/origin/vanir/main
+
+          # o que será mesclado: o ref pedido (branch do upstream, tag ou SHA)
+          if git rev-parse -q --verify "refs/remotes/upstream/${REF_UPSTREAM}^{commit}" >/dev/null; then
+            alvo=$(git rev-parse "refs/remotes/upstream/${REF_UPSTREAM}^{commit}")
+          elif git rev-parse -q --verify "refs/tags/upstream/${REF_UPSTREAM}^{commit}" >/dev/null; then
+            alvo=$(git rev-parse "refs/tags/upstream/${REF_UPSTREAM}^{commit}")
+          elif alvo=$(git rev-parse -q --verify "${REF_UPSTREAM}^{commit}"); then
+            :
+          else
+            echo "::error::Ref '${REF_UPSTREAM}' não existe no upstream."
+            exit 1
+          fi
+          echo "alvo=$alvo" >> "$GITHUB_OUTPUT"
+
+          # espelho: master do fork = master do upstream, só em fast-forward e só quando a execução é a normal
+          if [ "$REF_UPSTREAM" = "master" ]; then
+            if git push origin "refs/remotes/upstream/master:refs/heads/master" 2>"$RUNNER_TEMP/push.log"; then
+              echo "master do fork em dia com o upstream."
+            else
+              echo "::warning::master do fork não avançou em fast-forward (tem commits próprios ou divergiu). Nada foi forçado. $(tr '\n' ' ' < "$RUNNER_TEMP/push.log")"
+              echo "master_fora_do_espelho=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+          novos=$(git rev-list --count "origin/vanir/main..$alvo")
+          echo "novos=$novos" >> "$GITHUB_OUTPUT"
+          if [ "$novos" = "0" ]; then
+            echo "vanir/main já contém $REF_UPSTREAM ($alvo). Nada a sincronizar." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Preparar a branch de sincronização e mesclar
+        id: mesclar
+        if: steps.upstream.outputs.novos != '0'
+        shell: bash
+        run: |
+          set -uo pipefail
+          alvo="${{ steps.upstream.outputs.alvo }}"
+
+          # um único PR de sincronização aberto: se já houver, a branch dele é reaproveitada
+          existente=$(gh pr list --state open --base vanir/main --json number,headRefName --jq '[.[] | select(.headRefName | startswith("sincronizar/"))][0] // empty')
+          if [ -n "$existente" ]; then
+            branch=$(echo "$existente" | jq -r .headRefName)
+            echo "pr_existente=$(echo "$existente" | jq -r .number)" >> "$GITHUB_OUTPUT"
+          else
+            branch="sincronizar/$(date -u +%Y-%m-%d)"
+          fi
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+          git checkout -q -B "$branch" origin/vanir/main
+          git log --no-merges --format='- %h %s (%an)' "origin/vanir/main..$alvo" | head -200 > "$RUNNER_TEMP/commits.md"
+          git log --no-merges --format='%h' "origin/vanir/main..$alvo" | wc -l | tr -d ' ' > "$RUNNER_TEMP/total.txt"
+
+          if git merge --no-ff -m "chore: sincroniza com o upstream (${REF_UPSTREAM} @ ${alvo:0:9})" "$alvo"; then
+            echo "estado=mesclado" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=U > "$RUNNER_TEMP/conflitos.txt"
+            if [ -s "$RUNNER_TEMP/conflitos.txt" ]; then
+              # nada é resolvido: o estado com marcadores vai para a branch só para o PR poder mostrá-lo
+              git add -A
+              git commit -q -m "chore: sincronização com conflito, NÃO resolvido (${REF_UPSTREAM} @ ${alvo:0:9})"
+              echo "estado=conflito" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::A mesclagem falhou sem conflito de arquivo."
+              exit 1
+            fi
+          fi
+
+      - uses: pnpm/action-setup@v4
+        if: steps.mesclar.outputs.estado == 'mesclado'
+      - uses: actions/setup-node@v4
+        if: steps.mesclar.outputs.estado == 'mesclado'
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        if: steps.mesclar.outputs.estado == 'mesclado'
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Instalar, compilar e testar o resultado da mesclagem
+        id: testar
+        if: steps.mesclar.outputs.estado == 'mesclado'
+        shell: bash
+        run: |
+          set +e
+          {
+            pnpm install --frozen-lockfile &&
+            pnpm -r build &&
+            pnpm -r test
+          } > "$RUNNER_TEMP/teste.log" 2>&1
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          tail -n 40 "$RUNNER_TEMP/teste.log"
+          exit 0
+
+      - name: Publicar a branch e abrir ou atualizar o PR
+        if: steps.upstream.outputs.novos != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          alvo="${{ steps.upstream.outputs.alvo }}"
+          branch="${{ steps.mesclar.outputs.branch }}"
+          estado="${{ steps.mesclar.outputs.estado }}"
+          existente="${{ steps.mesclar.outputs.pr_existente }}"
+          total=$(cat "$RUNNER_TEMP/total.txt")
+
+          # a branch é só do robô: pode ser reescrita; nunca é vanir/main
+          git push --force-with-lease origin "HEAD:refs/heads/$branch"
+
+          rascunho=""
+          if [ "$estado" = "conflito" ]; then
+            titulo="[CONFLITO] Sincroniza upstream: $total commit(s), mesclagem não resolvida"
+            rotulo="conflito-upstream"
+            rascunho="--draft"
+            {
+              echo "A mesclagem de \`upstream/${REF_UPSTREAM}\` (\`${alvo:0:9}\`) em \`vanir/main\` tem conflito. **Nada foi resolvido.** A branch guarda o estado com os marcadores de conflito apenas para mostrar o problema; **não mescle este PR**."
+              echo
+              echo "### Arquivos em conflito"
+              sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/conflitos.txt"
+              echo
+              echo "### Commits do upstream que ainda não estão no fork ($total)"
+              cat "$RUNNER_TEMP/commits.md"
+              echo
+              echo "Para resolver: crie uma branch a partir de \`vanir/main\`, mescle \`${alvo:0:9}\` do upstream, resolva e abra um PR normal; depois feche este."
+            } > "$RUNNER_TEMP/corpo.md"
+          elif [ "${{ steps.testar.outputs.status }}" != "0" ]; then
+            titulo="[TESTE QUEBRADO] Sincroniza upstream: $total commit(s)"
+            rotulo="teste-quebrado"
+            {
+              echo "A mesclagem de \`upstream/${REF_UPSTREAM}\` (\`${alvo:0:9}\`) em \`vanir/main\` não tem conflito, mas **\`pnpm install --frozen-lockfile && pnpm -r build && pnpm -r test\` falhou** (código ${{ steps.testar.outputs.status }}). Não mescle antes de corrigir."
+              echo
+              echo "### Commits do upstream ($total)"
+              cat "$RUNNER_TEMP/commits.md"
+              echo
+              echo "### Fim do log"
+              echo '```'
+              tail -c 20000 "$RUNNER_TEMP/teste.log"
+              echo '```'
+            } > "$RUNNER_TEMP/corpo.md"
+          else
+            titulo="Sincroniza upstream: $total commit(s)"
+            rotulo="upstream-verde"
+            {
+              echo "Mesclagem de \`upstream/${REF_UPSTREAM}\` (\`${alvo:0:9}\`) em \`vanir/main\`, sem conflito, com \`pnpm install --frozen-lockfile && pnpm -r build && pnpm -r test\` verde."
+              echo
+              echo "### Commits do upstream ($total)"
+              cat "$RUNNER_TEMP/commits.md"
+            } > "$RUNNER_TEMP/corpo.md"
+          fi
+          if [ "${{ steps.upstream.outputs.master_fora_do_espelho }}" = "true" ]; then
+            printf '\n> O master do fork não avançou em fast-forward nesta execução (tem commits próprios); ele não foi forçado.\n' >> "$RUNNER_TEMP/corpo.md"
+          fi
+          if [ "${REF_UPSTREAM}" != "master" ]; then
+            printf '\n> Execução de ensaio com o ref `%s` do upstream.\n' "${REF_UPSTREAM}" >> "$RUNNER_TEMP/corpo.md"
+          fi
+          # o corpo do PR tem limite de 65536 caracteres
+          head -c 60000 "$RUNNER_TEMP/corpo.md" > "$RUNNER_TEMP/corpo-final.md"
+
+          for r in conflito-upstream teste-quebrado upstream-verde; do
+            gh label create "$r" --color "$([ "$r" = upstream-verde ] && echo 0E8A16 || echo D93F0B)" 2>/dev/null || true
+          done
+
+          if [ -n "$existente" ]; then
+            gh pr edit "$existente" --title "$titulo" --body-file "$RUNNER_TEMP/corpo-final.md"
+            for r in conflito-upstream teste-quebrado upstream-verde; do gh pr edit "$existente" --remove-label "$r" 2>/dev/null || true; done
+            gh pr edit "$existente" --add-label "$rotulo"
+            if [ -n "$rascunho" ]; then gh pr ready "$existente" --undo || true; else gh pr ready "$existente" || true; fi
+            echo "PR atualizado: #$existente ($rotulo)" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            url=$(gh pr create --base vanir/main --head "$branch" --title "$titulo" --body-file "$RUNNER_TEMP/corpo-final.md" --label "$rotulo" $rascunho)
+            echo "PR aberto: $url ($rotulo)" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
