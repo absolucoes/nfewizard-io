@@ -8,7 +8,9 @@ type NodeXml = Record<string, any>;
 export type MDFEGerarDamdfeProps = { data: string; outputPath: string };
 const MM = 72 / 25.4;
 const PAGE_W = 595.28;
+const PAGE_H = 841.89;
 const MARGIN = 22;
+const LINHA_DOC = 18;
 
 function value(node: NodeXml | undefined, key: string): string {
     const v = node?.[key];
@@ -25,14 +27,37 @@ function field(doc: InstanceType<typeof PDFDocument>, x: number, y: number, w: n
     doc.font('Helvetica').fontSize(6).text(label.toUpperCase(), x + 3, y + 2, { width: w - 6 });
     doc.font('Helvetica').fontSize(8).text(content || ' ', x + 3, y + 11, { width: w - 6, height: h - 13, align, ellipsis: true });
 }
-function header(doc: InstanceType<typeof PDFDocument>, emit: NodeXml, ide: NodeXml, key: string, page: number, pages: number, qr: Buffer, bar: Buffer, prot: NodeXml, w: number, tpAmb: string) {
+/** Altura de um campo com uma linha por item (limite de 6 linhas), para não cortar o que foi informado. */
+function alturaAuto(doc: InstanceType<typeof PDFDocument>, w: number, linhas: string[]): number {
+    doc.font('Helvetica').fontSize(8);
+    const h = doc.heightOfString(linhas.join('\n') || ' ', { width: w - 6 });
+    return Math.min(h, 6 * 9.5) + 15;
+}
+function fieldAuto(doc: InstanceType<typeof PDFDocument>, x: number, y: number, w: number, h: number, label: string, linhas: string[]) {
+    doc.rect(x, y, w, h).stroke();
+    doc.font('Helvetica').fontSize(6).text(label.toUpperCase(), x + 3, y + 2, { width: w - 6 });
+    doc.font('Helvetica').fontSize(8).text(linhas.join('\n') || ' ', x + 3, y + 11, { width: w - 6, height: h - 13, ellipsis: true });
+}
+function decimal(valor: string, casas = 2): string {
+    return Number(valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+}
+/** Uma linha de reboque: placa / UF, RENAVAM, tara e capacidade. */
+function descricaoReboque(v: NodeXml): string {
+    const partes = [[value(v, 'placa'), value(v, 'UF')].filter(Boolean).join(' / ')];
+    if (value(v, 'RENAVAM')) partes.push('RENAVAM ' + value(v, 'RENAVAM'));
+    if (value(v, 'tara')) partes.push('tara ' + value(v, 'tara') + ' kg');
+    if (value(v, 'capKG')) partes.push('cap. ' + value(v, 'capKG') + ' kg');
+    if (value(v, 'capM3')) partes.push(value(v, 'capM3') + ' m³');
+    return partes.filter(Boolean).join(' · ');
+}
+function header(doc: InstanceType<typeof PDFDocument>, emit: NodeXml, ide: NodeXml, key: string, page: number, pages: number, qr: Buffer, bar: Buffer, prot: NodeXml, w: number, tpAmb: string, rntrc: string) {
     const x = MARGIN, q = 25 * MM;
     const end = emit.enderEmit || {};
     const address = [value(end, 'xLgr'), value(end, 'nro'), value(end, 'xBairro'), value(end, 'xMun'), value(end, 'UF'), value(end, 'CEP')].filter(Boolean).join(' - ');
     const cnpjLabel = value(emit, 'CNPJ') ? 'CNPJ' : 'CPF';
     const cnpj = value(emit, 'CNPJ') || value(emit, 'CPF');
     doc.font('Helvetica-Bold').fontSize(11).text(value(emit, 'xNome'), x, 24, { width: w - q - 10, ellipsis: true });
-    doc.font('Helvetica').fontSize(8).text(address + '\n' + cnpjLabel + ': ' + cnpj + '  IE: ' + value(emit, 'IE') + '  RNTRC: ' + value(emit, 'RNTRC'), x, 40, { width: w - q - 10, height: 38 });
+    doc.font('Helvetica').fontSize(8).text(address + '\n' + cnpjLabel + ': ' + cnpj + '  IE: ' + value(emit, 'IE') + '  RNTRC: ' + rntrc, x, 40, { width: w - q - 10, height: 38 });
     doc.image(qr, x + w - q, 24, { width: q, height: q });
     doc.font('Helvetica-Bold').fontSize(12).text('DAMDFE - Documento Auxiliar do Manifesto Eletrônico de Documentos Fiscais', x, 91, { width: w, align: 'center' });
     const cols = [38, 38, 54, 36, 170, 60, w - 396];
@@ -63,7 +88,6 @@ export async function MDFE_GerarDamdfe(props: MDFEGerarDamdfeProps) {
         list(m.infNFe).forEach((d: NodeXml) => docs.push({ type: 'NF-e', key: value(d, 'chNFe') }));
         list(m.infMDFeTransp).forEach((d: NodeXml) => docs.push({ type: 'MDF-e', key: value(d, 'chMDFe') }));
     });
-    const pages = Math.max(1, Math.ceil(Math.max(docs.length, 1) / 18));
     const qr = await QRCode.toBuffer(qrText, { width: 240, margin: 4 });
     const bar = await bwipjs.toBuffer({ bcid: 'code128', text: key, scaleX: 2, height: 20, includetext: false, paddingwidth: 10, paddingheight: 8 });
     const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margins: { top: 22, right: MARGIN, bottom: 22, left: MARGIN }, bufferPages: false, compress: false });
@@ -73,25 +97,53 @@ export async function MDFE_GerarDamdfe(props: MDFEGerarDamdfeProps) {
     const w = PAGE_W - MARGIN * 2, unload = list(inf.infDoc?.infMunDescarga);
     const cteCount = unload.reduce((n: number, m: NodeXml) => n + list(m.infCTe).length, 0);
     const nfeCount = unload.reduce((n: number, m: NodeXml) => n + list(m.infNFe).length, 0);
-    const total = inf.tot || {}, vehicle = inf.infModal?.rodo?.veicTracao || {};
+    const rodo = inf.infModal?.rodo || {};
+    const total = inf.tot || {}, vehicle = rodo.veicTracao || {};
+    // O XSD do MDF-e 3.00 põe o RNTRC em `rodo/infANTT/RNTRC`. `emit/RNTRC` e `veicTracao/RNTRC` não existem no
+    // leiaute, mas continuam valendo como recurso para o XML de quem os preencheu assim.
+    const rntrc = value(rodo.infANTT, 'RNTRC') || value(inf.emit, 'RNTRC') || value(vehicle, 'RNTRC');
     const countCargo = value(total, 'qCarga') + ' ' + value(total, 'cUnid');
     const totalValue = Number(value(total, 'vCarga') || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
     const drivers = list(vehicle.condutor).map((d: NodeXml) => value(d, 'xNome') + ' - CPF ' + value(d, 'CPF')).join(' | ');
     const insurance = list(inf.seg).map((s: NodeXml) => [value(s, 'xSeg'), value(s, 'CNPJ') || value(s, 'CPF'), value(s, 'nApol')].filter(Boolean).join(' / ')).join(' | ');
+    const reboques = list(rodo.veicReboque).map((v: NodeXml, i: number) => 'Reboque ' + (i + 1) + ': ' + descricaoReboque(v));
+    const valePedagio = list(rodo.infANTT?.valePed?.disp).map((d: NodeXml) => [
+        'Fornecedora ' + value(d, 'CNPJForn'),
+        value(d, 'CNPJPg') ? 'Responsável CNPJ ' + value(d, 'CNPJPg') : value(d, 'CPFPg') ? 'Responsável CPF ' + value(d, 'CPFPg') : '',
+        value(d, 'nCompra') ? 'Comprovante ' + value(d, 'nCompra') : '',
+        'R$ ' + decimal(value(d, 'vValePed')),
+    ].filter(Boolean).join(' · '));
+    const lacres = [...list(rodo.lacRodo), ...list(inf.lacres)].map((l: NodeXml) => value(l, 'nLacre')).filter(Boolean);
+    const linhasLacres = lacres.length ? [lacres.join(', ')] : [];
+    // Reboque, vale-pedágio e lacres só ocupam lugar quando o XML os traz.
+    const hReboques = reboques.length ? alturaAuto(doc, w, reboques) : 0;
+    const hVale = valePedagio.length ? alturaAuto(doc, w, valePedagio) : 0;
+    const hLacres = lacres.length ? alturaAuto(doc, w, linhasLacres) : 0;
+    // A lista de documentos ocupa o que sobra da folha depois do cabeçalho e dos campos de cima. O cabeçalho repete
+    // em toda folha, então a conta vale para todas; a soma é a mesma das linhas desenhadas no laço abaixo.
+    const yDocs = 311 + 35 + 28 + 28 + 24 + 31 + 26 + 13 + LINHA_DOC + hReboques + hVale + hLacres;
+    const porFolha = Math.max(1, Math.floor((PAGE_H - 22 - yDocs) / LINHA_DOC));
+    const pages = Math.max(1, Math.ceil(Math.max(docs.length, 1) / porFolha));
     let start = 0;
     for (let page = 1; page <= pages; page++) {
         if (page > 1) doc.addPage();
-        header(doc, inf.emit || {}, inf.ide || {}, key, page, pages, qr, bar, prot, w, tpAmb);
+        header(doc, inf.emit || {}, inf.ide || {}, key, page, pages, qr, bar, prot, w, tpAmb, rntrc);
         let y = 311;
         field(doc, MARGIN, y, w / 4, 30, 'Qtd. CT-e', String(cteCount), 'center');
         field(doc, MARGIN + w / 4, y, w / 4, 30, 'Qtd. NF-e', String(nfeCount), 'center');
         field(doc, MARGIN + w / 2, y, w / 4, 30, 'Peso total', countCargo, 'center');
         field(doc, MARGIN + w * 3 / 4, y, w / 4, 30, 'Valor da carga', 'R$ ' + totalValue, 'center');
         y += 35;
-        const plate = [value(vehicle, 'placa'), value(vehicle, 'UF'), value(vehicle, 'RNTRC')].filter(Boolean).join(' / ');
+        const plate = [value(vehicle, 'placa'), value(vehicle, 'UF'), rntrc].filter(Boolean).join(' / ');
         field(doc, MARGIN, y, w / 2, 28, 'Veículo de tração (placa / UF / RNTRC)', plate);
         field(doc, MARGIN + w / 2, y, w / 2, 28, 'Produto predominante', [value(inf.prodPred, 'tpCarga'), value(inf.prodPred, 'xProd')].filter(Boolean).join(' - '));
         y += 28;
+        field(doc, MARGIN, y, w / 2, 28, 'RENAVAM do veículo de tração', value(vehicle, 'RENAVAM'));
+        field(doc, MARGIN + w / 2, y, w / 2, 28, 'Tara do veículo de tração (kg)', value(vehicle, 'tara'));
+        y += 28;
+        if (hReboques) { fieldAuto(doc, MARGIN, y, w, hReboques, 'Veículos reboque (placa / UF, RENAVAM, tara, capacidade)', reboques); y += hReboques; }
+        if (hVale) { fieldAuto(doc, MARGIN, y, w, hVale, 'Vale-pedágio (fornecedora, responsável pelo pagamento, comprovante, valor)', valePedagio); y += hVale; }
+        if (hLacres) { fieldAuto(doc, MARGIN, y, w, hLacres, 'Lacres', linhasLacres); y += hLacres; }
         field(doc, MARGIN, y, w / 2, 24, 'Seguro / seguradora', insurance);
         const route = list(inf.percurso?.UFPer).map((u: NodeXml) => value(u, 'UFPer') || String(u)).join(' - ') || value(inf.ide, 'UFIni') + ' - ' + value(inf.ide, 'UFFim');
         field(doc, MARGIN + w / 2, y, w / 2, 24, 'Percurso', route);
@@ -102,16 +154,16 @@ export async function MDFE_GerarDamdfe(props: MDFEGerarDamdfeProps) {
         y += 26;
         doc.font('Helvetica-Bold').fontSize(8).text('DOCUMENTOS FISCAIS VINCULADOS', MARGIN, y);
         y += 13;
-        field(doc, MARGIN, y, 52, 18, 'Tipo', '');
-        field(doc, MARGIN + 52, y, w - 52, 18, 'Chave de acesso', '');
-        y += 18;
-        docs.slice(start, start + 18).forEach((d) => {
-            field(doc, MARGIN, y, 52, 18, '', d.type);
-            field(doc, MARGIN + 52, y, w - 52, 18, '', d.key);
-            y += 18;
+        field(doc, MARGIN, y, 52, LINHA_DOC, 'Tipo', '');
+        field(doc, MARGIN + 52, y, w - 52, LINHA_DOC, 'Chave de acesso', '');
+        y += LINHA_DOC;
+        docs.slice(start, start + porFolha).forEach((d) => {
+            field(doc, MARGIN, y, 52, LINHA_DOC, '', d.type);
+            field(doc, MARGIN + 52, y, w - 52, LINHA_DOC, '', d.key);
+            y += LINHA_DOC;
         });
-        if (!docs.length) field(doc, MARGIN, y, w, 18, '', 'Sem documentos fiscais vinculados');
-        start += 18;
+        if (!docs.length) field(doc, MARGIN, y, w, LINHA_DOC, '', 'Sem documentos fiscais vinculados');
+        start += porFolha;
     }
     doc.end();
     await ended;

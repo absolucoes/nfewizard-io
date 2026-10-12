@@ -55,3 +55,86 @@ describe('MDFE_GerarDamdfe', () => {
       .rejects.toThrow('DAMDFE_EXIGE_MDFE_AUTORIZADO');
   });
 });
+
+// MDF-e no formato do XSD 3.00: o RNTRC mora em `rodo/infANTT/RNTRC` (não em `emit` nem em `veicTracao`), e o veículo
+// leva RENAVAM e tara. Dados fictícios.
+const ANTT = '<infANTT><RNTRC>87654321</RNTRC><valePed><disp><CNPJForn>11222333000181</CNPJForn><CNPJPg>12345678000195</CNPJPg><nCompra>COMP-777</nCompra><vValePed>150.50</vValePed></disp></valePed></infANTT>';
+const TRACAO_XSD = '<veicTracao><placa>ABC1D23</placa><RENAVAM>01234567890</RENAVAM><tara>8000</tara><capKG>30000</capKG><condutor><xNome>Motorista Fictício</xNome><CPF>12345678909</CPF></condutor><tpRod>03</tpRod><tpCar>02</tpCar><UF>GO</UF></veicTracao>';
+const REBOQUE_XSD = '<veicReboque><placa>REB1A11</placa><RENAVAM>09876543210</RENAVAM><tara>6000</tara><capKG>25000</capKG><tpCar>02</tpCar><UF>GO</UF></veicReboque>';
+const MODAL_XSD = '<infModal versaoModal="3.00"><rodo>' + ANTT + TRACAO_XSD + REBOQUE_XSD + '<lacRodo><nLacre>LAC-001</nLacre></lacRodo><lacRodo><nLacre>LAC-002</nLacre></lacRodo></rodo></infModal>';
+const XML_XSD = XML
+    .replace('<RNTRC>12345678</RNTRC><enderEmit>', '<enderEmit>')
+    .replace(/<infModal[\s\S]*<\/infModal>/, MODAL_XSD);
+
+describe('MDFE_GerarDamdfe: campos do leiaute 3.00 (RNTRC em infANTT, Anexo II do MOC)', () => {
+  async function texto(xml: string, nome: string) {
+    const outputPath = '/tmp/mdfe-damdfe-' + nome + '.pdf';
+    const result = await MDFE_GerarDamdfe({ data: xml, outputPath });
+    const parsed = pdfParse(await fs.promises.readFile(outputPath));
+    return { result, parsed, plano: parsed.text.replace(/\s+/g, ' ') };
+  }
+
+  it('o RNTRC vem de infANTT, no cabeçalho e no campo do veículo de tração', async () => {
+    expect(XML_XSD).not.toContain('<RNTRC>12345678</RNTRC>');
+    const { plano } = await texto(XML_XSD, 'rntrc-antt');
+    expect(plano).toMatch(/RNTRC:\s*87654321(?!\d)/);
+    expect(plano).toMatch(/ABC1D23\s*\/\s*GO\s*\/\s*87654321/);
+  });
+
+  it('o RNTRC de emit e de veicTracao continua valendo quando não há infANTT', async () => {
+    const { plano } = await texto(XML, 'rntrc-legado');
+    expect(plano).toMatch(/RNTRC:\s*12345678(?!\d)/);
+  });
+
+  it('infANTT tem prioridade sobre os campos antigos', async () => {
+    const { plano } = await texto(XML_XSD.replace('<enderEmit>', '<RNTRC>11111111</RNTRC><enderEmit>'), 'rntrc-prioridade');
+    expect(plano).toMatch(/RNTRC:\s*87654321(?!\d)/);
+    expect(plano).not.toContain('11111111');
+  });
+
+  it('traz RENAVAM e tara do veículo de tração', async () => {
+    const { plano } = await texto(XML_XSD, 'renavam-tara');
+    expect(plano).toContain('01234567890');
+    expect(plano).toMatch(/\b8000\b/);
+  });
+
+  it('traz os reboques com placa, RENAVAM e tara', async () => {
+    const { plano } = await texto(XML_XSD, 'reboques');
+    expect(plano).toContain('REB1A11');
+    expect(plano).toContain('09876543210');
+    expect(plano).toMatch(/tara 6000 kg/);
+  });
+
+  it('traz o vale-pedágio com fornecedora, responsável, comprovante e valor', async () => {
+    const { plano } = await texto(XML_XSD, 'vale-pedagio');
+    expect(plano).toContain('11222333000181');
+    expect(plano).toContain('COMP-777');
+    expect(plano).toContain('150,50');
+  });
+
+  it('traz os lacres do modal e os do MDF-e', async () => {
+    const comLacresDoMdfe = XML_XSD.replace('</infMDFe>', '<lacres><nLacre>LAC-MDFE-9</nLacre></lacres></infMDFe>');
+    const { plano } = await texto(comLacresDoMdfe, 'lacres');
+    expect(plano).toContain('LAC-001');
+    expect(plano).toContain('LAC-002');
+    expect(plano).toContain('LAC-MDFE-9');
+  });
+
+  it('sem reboque, vale-pedágio nem lacres, não desenha esses campos', async () => {
+    const { plano } = await texto(XML, 'sem-extras');
+    expect(plano).not.toContain('REBOQUE');
+    expect(plano).not.toContain('LACRES');
+  });
+
+  it('com todos os campos a lista de documentos continua cabendo na folha e nenhum documento se perde', async () => {
+    const chaves = Array.from({ length: 40 }, (_, i) => '3526101234567800019555001000000' + String(i).padStart(3, '0') + '1000000001');
+    const grupos = chaves.map((c) => '<infNFe><chNFe>' + c + '</chNFe></infNFe>').join('');
+    const xml = XML_XSD.replace(/<infNFe>[\s\S]*<\/infNFe>/, grupos);
+    const { result, parsed } = await texto(xml, 'muitas-com-extras');
+    expect(result.totalPaginas).toBeGreaterThan(2);
+    expect(parsed.numpages).toBe(result.totalPaginas);
+    const semEspacos = parsed.text.replaceAll(' ', '');
+    const perdidas = chaves.filter((c) => !semEspacos.includes(c));
+    expect(perdidas).toEqual([]);
+  });
+});
