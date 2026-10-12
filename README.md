@@ -1,3 +1,5 @@
+> Este é o fork Vanir (Absoluções): branches, fluxos e correções em [README-VANIR.md](README-VANIR.md) e [CHANGELOG-VANIR.md](CHANGELOG-VANIR.md).
+
 # NFeWizard-io 🪄
 
 ## 🛠️ Lib atualizada com NT 2025.002 v.1.35 - Reforma Tributária

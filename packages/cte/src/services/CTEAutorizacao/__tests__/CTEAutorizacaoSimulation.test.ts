@@ -1,4 +1,4 @@
-jest.mock('../../util/CTeSchema.js', () => ({ validarXmlCte: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../../util/CTeSchema.js', () => ({ ...jest.requireActual('../../util/CTeSchema.js'), validarXmlCte: jest.fn().mockResolvedValue(undefined) }));
 import { CTEAutorizacaoService } from '../CTEAutorizacaoService.js';
 import pako from 'pako';
 
@@ -9,7 +9,8 @@ describe('simulação interna de autorização CT-e', () => {
             getConfig: () => ({ dfe: { UF: 'GO' }, nfe: { ambiente: 2 } }),
         };
         const xmlBuilder = {
-            gerarXml: jest.fn(() => '<CTe xmlns="http://www.portalfiscal.inf.br/cte"><infCte Id="fixture"></infCte></CTe>'),
+            // devolve o QR Code que o serviço montou, escapado como o XmlBuilder real faria
+            gerarXml: jest.fn((objeto: any) => `<CTe xmlns="http://www.portalfiscal.inf.br/cte"><infCte Id="fixture"></infCte><infCTeSupl><qrCodCTe>${String(objeto.infCTeSupl.qrCodCTe).replace(/&/g, '&amp;')}</qrCodCTe></infCTeSupl></CTe>`),
             assinarXML: jest.fn((xml: string) => xml.replace('</CTe>', '<Signature>assinatura-ficticia</Signature></CTe>')),
         };
         const xmlCompactadoRecebido: string[] = [];
@@ -22,6 +23,8 @@ describe('simulação interna de autorização CT-e', () => {
         const service = new CTEAutorizacaoService(
             ambiente as any,
             {
+                getWebServiceUrl: jest.fn(() => 'https://dfe-portal.svrs.rs.gov.br/cte/qrCode'),
+                getSvcCTe: jest.fn(() => 'SVC-SP'),
                 verificaRejeicao: jest.fn(() => ({ protCTe: { infProt: { cStat: '100', xMotivo: 'Autorizado no simulador', chCTe: 'chave-ficticia' } } })),
                 salvaConsulta: jest.fn(),
                 salvaRetorno: jest.fn(),

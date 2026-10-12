@@ -3,7 +3,8 @@ import type { NFeWizardProps } from '@nfewizard/types/shared';
 import { calcularDigitoVerificadorMdfe } from './util/calcular-dv-mdfe.js';
 import { montarUrlQrCodeMdfe } from './util/MDFeQrCode.js';
 import { validarXmlMdfe } from './util/MDFeSchema.js';
-import { analisarRespostaXmlMdfe, compactarXmlMdfe, interpretarRetornoAutorizacaoMdfe, montarEnvelopeSoapMdfe } from './util/MDFeTransmissao.js';
+import { actionSoapMdfe, analisarRespostaXmlMdfe, compactarXmlMdfe, interpretarRetornoAutorizacaoMdfe, montarEnvelopeSoapMdfe, OperacaoMdfe } from './util/MDFeTransmissao.js';
+import { codigoUfMdfe } from './util/MDFeUf.js';
 import { DadosEventoMdfe, montarXmlEventoMdfe } from './util/MDFeEvento.js';
 import servicos from './config/MDFeServicosUrl.json' with { type: 'json' };
 
@@ -13,6 +14,19 @@ export interface MDFePayload {
     emit: Record<string, any>;
     [key: string]: any;
   };
+}
+
+/** Sequência de `ide` no XSD (mdfeTiposBasico_v3.00.xsd): o XML sai nesta ordem, venha o payload na ordem que vier. */
+const ORDEM_IDE = ['cUF', 'tpAmb', 'tpEmit', 'tpTransp', 'mod', 'serie', 'nMDF', 'cMDF', 'cDV', 'modal', 'dhEmi', 'tpEmis', 'procEmi', 'verProc',
+  'UFIni', 'UFFim', 'infMunCarrega', 'infPercurso', 'dhIniViagem', 'indCanalVerde', 'indCarregaPosterior'];
+
+/** Reordena `ide` no próprio objeto (quem chamou guarda a referência); o que o leiaute não conhece segue no fim. */
+export function ordenarIdeMdfe<T extends Record<string, any>>(ide: T): T {
+  const copia = { ...ide } as Record<string, any>;
+  for (const chave of Object.keys(copia)) delete (ide as any)[chave];
+  for (const chave of ORDEM_IDE) if (chave in copia) (ide as any)[chave] = copia[chave];
+  for (const chave of Object.keys(copia)) if (!(chave in (ide as any))) (ide as any)[chave] = copia[chave];
+  return ide;
 }
 
 export function prepararIdentificacaoMdfe(payload: MDFePayload, codigoNumerico?: string): string {
@@ -31,6 +45,7 @@ export function prepararIdentificacaoMdfe(payload: MDFePayload, codigoNumerico?:
   const semDv = cUF + match[1].slice(-2) + match[2] + cnpj + '58' + serie + nMDF + tpEmis + cMDF;
   const dv = calcularDigitoVerificadorMdfe(semDv);
   Object.assign(ide, { mod: 58, tpEmis: Number(tpEmis), cMDF, cDV: dv });
+  ordenarIdeMdfe(ide);
   return semDv + dv;
 }
 
@@ -60,20 +75,24 @@ export class MDFeWizard {
     if (!this.environment || !this.xmlBuilder || !this.axios) throw new Error('MDFE_AMBIENTE_NAO_CARREGADO');
   }
 
-  private obterUrl(tpAmb: number | string, operacao: keyof typeof servicos['1']): string {
+  private obterUrl(tpAmb: number | string, operacao: OperacaoMdfe): string {
     const url = (servicos as any)[String(tpAmb)]?.[operacao];
     if (!url) throw new Error('MDFE_AMBIENTE_INVALIDO: esperado 1 (produção) ou 2 (homologação)');
     return url;
   }
 
-  private headersSoap(operacao: string) {
-    const action = 'http://www.portalfiscal.inf.br/mdfe/wsdl/' + operacao;
-    return { 'Content-Type': 'application/soap+xml; charset=utf-8; action="' + action + '"' };
+  private headersSoap(operacao: OperacaoMdfe) {
+    return { 'Content-Type': 'application/soap+xml; charset=utf-8; action="' + actionSoapMdfe(operacao) + '"' };
   }
 
-  private async enviar(tpAmb: number | string, operacao: keyof typeof servicos['1'], xml: string): Promise<any> {
+  /** `cUF` do cabeçalho SOAP: a UF do emitente configurada, ou a informada pela operação. */
+  private cUfCabecalho(cUF?: string | number): string {
+    return codigoUfMdfe(cUF ?? String(this.environment!.getConfig().dfe.UF));
+  }
+
+  private async enviar(tpAmb: number | string, operacao: OperacaoMdfe, xml: string, cUF?: string | number): Promise<any> {
     this.exigirAmbiente();
-    const envelope = montarEnvelopeSoapMdfe(xml, operacao);
+    const envelope = montarEnvelopeSoapMdfe(xml, operacao, this.cUfCabecalho(cUF));
     const resposta = await this.axios.post(this.obterUrl(tpAmb, operacao), envelope, {
       headers: this.headersSoap(operacao)
     });
@@ -94,7 +113,7 @@ export class MDFeWizard {
     xml = xml.replace('</infMDFe>', '</infMDFe><infMDFeSupl><qrCodMDFe><![CDATA[' + qrCode + ']]></qrCodMDFe></infMDFeSupl>');
     await validarXmlMdfe(xml);
 
-    const envelope = montarEnvelopeSoapMdfe(compactarXmlMdfe(xml), 'MDFeRecepcaoSinc');
+    const envelope = montarEnvelopeSoapMdfe(compactarXmlMdfe(xml), 'MDFeRecepcaoSinc', this.cUfCabecalho(ide.cUF));
     const resposta = await this.axios.post(this.obterUrl(ide.tpAmb, 'MDFeRecepcaoSinc'), envelope, {
       headers: this.headersSoap('MDFeRecepcaoSinc')
     });
@@ -122,7 +141,7 @@ export class MDFeWizard {
       chMDFe: chave
     }, 'consSitMDFe');
     await validarXmlMdfe(xml, 'consSitMDFe_v3.00.xsd');
-    return this.enviar(tpAmb, 'MDFeConsulta', xml);
+    return this.enviar(tpAmb, 'MDFeConsulta', xml, chave.substring(0, 2));
   }
 
   async MDFe_ConsNaoEncerrados(cnpj: string, tpAmb: 1 | 2): Promise<any> {
@@ -147,7 +166,7 @@ export class MDFeWizard {
     await validarXmlMdfe(detalhe, schema.schema);
     const assinado = this.xmlBuilder.assinarXML(xml, 'infEvento');
     await validarXmlMdfe(assinado, 'eventoMDFe_v3.00.xsd');
-    const retorno = await this.enviar(dados.tpAmb, 'MDFeRecepcaoEvento', assinado);
+    const retorno = await this.enviar(dados.tpAmb, 'MDFeRecepcaoEvento', assinado, dados.cOrgao);
     return { ...retorno, success: retorno.cStat === '135' };
   }
 }

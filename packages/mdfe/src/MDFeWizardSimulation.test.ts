@@ -35,10 +35,10 @@ describe('MDFeWizard — simulação interna', () => {
     const resultado = await wizard.MDFe_Autorizacao(payload);
     const transporte = (wizard as any).axios;
     const [url, envelope, options] = transporte.post.mock.calls[0];
-    const mensagem = envelope.match(/<mdfeDadosMsg>([^<]+)<\/mdfeDadosMsg>/)?.[1];
+    const mensagem = envelope.match(/<mdfeDadosMsg [^>]*>([^<]+)<\/mdfeDadosMsg>/)?.[1];
     const xmlEnviado = gunzipSync(Buffer.from(mensagem, 'base64')).toString('utf8');
     expect(url).toContain('mdfe-homologacao.svrs.rs.gov.br');
-    expect(envelope).toContain('<MDFeRecepcaoSinc ');
+    expect(envelope).toContain('<mdfeCabecMsg xmlns="http://www.portalfiscal.inf.br/mdfe/wsdl/MDFeRecepcaoSinc"><cUF>35</cUF>');
     expect(options.headers['Content-Type']).toContain('application/soap+xml');
     expect(xmlEnviado).toContain('<infMDFeSupl>');
     expect(xmlEnviado).toContain('/mdfe/qrCode?');

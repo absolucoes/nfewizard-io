@@ -1,6 +1,6 @@
 import fs from 'fs';
-// @ts-expect-error pdf-parse@1.1.1 does not publish its own typings
-import pdfParse from 'pdf-parse';
+
+import { textoDoPdf as pdfParse } from '../../test-support/pdfTexto';
 import { MDFE_GerarDamdfe } from './MDFEGerarDamdfe.js';
 
 const CHAVE = '35261012345678000195580010000000011123456780';
@@ -20,7 +20,7 @@ describe('MDFE_GerarDamdfe', () => {
   it('gera PDF legível com a chave, protocolo e aviso de homologação', async () => {
     const outputPath = process.env.DAMDFE_TEST_OUTPUT || '/tmp/mdfe-damdfe-teste.pdf';
     const result = await MDFE_GerarDamdfe({ data: XML, outputPath });
-    const parsed = await pdfParse(await fs.promises.readFile(outputPath));
+    const parsed = pdfParse(await fs.promises.readFile(outputPath));
     expect(result.totalPaginas).toBe(1);
     expect(parsed.text.replaceAll(' ', '')).toContain(CHAVE);
     expect(parsed.text).toContain('135260000000001');
@@ -33,7 +33,7 @@ describe('MDFE_GerarDamdfe', () => {
     const producao = XML.replace('<tpAmb>2</tpAmb>', '<tpAmb>1</tpAmb>');
     const outputPath = '/tmp/mdfe-damdfe-producao.pdf';
     await MDFE_GerarDamdfe({ data: producao, outputPath });
-    const parsed = await pdfParse(await fs.promises.readFile(outputPath));
+    const parsed = pdfParse(await fs.promises.readFile(outputPath));
     expect(parsed.text).not.toContain('EMITIDO EM AMBIENTE DE HOMOLOGAÇÃO');
     expect(parsed.text).toContain('Protocolo de autorização');
   });
@@ -43,7 +43,7 @@ describe('MDFE_GerarDamdfe', () => {
     const muitos = XML.replace(grupo, Array(19).fill(grupo).join(''));
     const outputPath = '/tmp/mdfe-damdfe-varias-paginas.pdf';
     const result = await MDFE_GerarDamdfe({ data: muitos, outputPath });
-    const parsed = await pdfParse(await fs.promises.readFile(outputPath));
+    const parsed = pdfParse(await fs.promises.readFile(outputPath));
     expect(result.totalPaginas).toBe(2);
     expect(parsed.numpages).toBe(2);
     expect(parsed.text).toContain('2/2');

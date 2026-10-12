@@ -48,4 +48,14 @@ export type NFEGerarDanfeProps = {
      */
     // pageWidth: 226.772 | 158.74;
     pageWidth?: number;
+    /**
+     * @param {Buffer} logo - Logo do emitente (PNG/JPEG), opcional. Correção do Vanir.
+     * Com logo, um quadro de 40x40 fica à esquerda e o texto do emitente desloca para a direita.
+     */
+    logo?: Buffer;
+    /**
+     * @param {string} faixaAmbiente - Texto da faixa de homologação, opcional. Correção do Vanir.
+     * Sem ele, vale o texto original da lib.
+     */
+    faixaAmbiente?: string;
 };
