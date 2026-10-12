@@ -22,6 +22,7 @@ export default [
       'bwip-js',
       'pdfkit',
       'qrcode',
+      'xml2js',
       'date-fns',
       'date-fns/locale',
       'fs',
@@ -40,7 +41,9 @@ export default [
         declaration: true,
         declarationMap: false,
         compilerOptions: {
-          rootDir: '.'
+          rootDir: '.',
+          module: 'ESNext',
+          moduleResolution: 'Bundler'
         }
       })
     ]
@@ -62,6 +65,7 @@ export default [
       'bwip-js',
       'pdfkit',
       'qrcode',
+      'xml2js',
       'date-fns',
       'date-fns/locale',
       'fs',
@@ -80,7 +84,9 @@ export default [
         declaration: true,
         declarationMap: false,
         compilerOptions: {
-          rootDir: '.'
+          rootDir: '.',
+          module: 'ESNext',
+          moduleResolution: 'Bundler'
         }
       })
     ]

@@ -29,3 +29,9 @@ node_modules/
 
 # OS
 .DS_Store
+
+# Generated build declarations
+**/*.test.d.ts
+**/__tests__/**
+**/*.tsbuildinfo
+dist/tsconfig.tsbuildinfo

@@ -1,0 +1,29 @@
+{
+  "name": "@nfewizard/mdfe",
+  "version": "1.0.0",
+  "description": "Biblioteca Node.js para MDF-e 3.00",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": { ".": { "types": "./dist/src/index.d.ts", "import": "./dist/src/index.js" } },
+  "files": ["dist/src", "resources/schemas", "README.md"],
+  "license": "GPL-3.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "jest --runInBand"
+  },
+  "dependencies": {
+    "@nfewizard/shared": "workspace:*",
+    "@nfewizard/types": "workspace:*",
+    "libxmljs2": "^0.37.0",
+    "xsd-assembler": "^0.0.3",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.4.5"
+  }
+}

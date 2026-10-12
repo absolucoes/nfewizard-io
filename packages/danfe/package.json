@@ -1,7 +1,7 @@
 {
   "name": "@nfewizard/danfe",
   "version": "1.0.7",
-  "description": "Geração de DANFE/DACTE em PDF para NFe, NFCe e CTe",
+  "description": "Geração de DANFE/DACTE/DAMDFE em PDF para NFe, NFCe, CTe e MDFe",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/src/index.d.ts",
@@ -22,6 +22,7 @@
   "keywords": [
     "danfe",
     "dacte",
+    "damdfe",
     "pdf",
     "nfe",
     "nfce",
@@ -41,21 +42,24 @@
     "test": "jest"
   },
   "dependencies": {
-    "@nfewizard/types": "workspace:*",
     "@nfewizard/shared": "workspace:*",
+    "@nfewizard/types": "workspace:*",
+    "bwip-js": "^4.3.2",
+    "date-fns": "^2.30.0",
     "pdfkit": "^0.15.0",
     "qrcode": "^1.5.4",
-    "bwip-js": "^4.3.2",
-    "date-fns": "^2.30.0"
+    "xml2js": "^0.6.2"
   },
   "devDependencies": {
-    "typescript": "^5.4.5",
-    "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-commonjs": "^28.0.1",
-    "@rollup/plugin-typescript": "^11.1.6",
     "@rollup/plugin-json": "^6.1.0",
-    "rollup": "^4.59.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-typescript": "^11.1.6",
     "@types/pdfkit": "^0.13.5",
-    "@types/qrcode": "^1.5.5"
+    "@types/qrcode": "^1.5.5",
+    "pdf-parse": "1.1.1",
+    "@types/xml2js": "^0.4.14",
+    "rollup": "^4.59.0",
+    "typescript": "^5.4.5"
   }
 }

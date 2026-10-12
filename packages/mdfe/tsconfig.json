@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".",
+    "composite": true,
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*", "src/**/*.json"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    { "path": "../types" },
+    { "path": "../shared" }
+  ]
+}

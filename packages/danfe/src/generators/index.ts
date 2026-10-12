@@ -25,6 +25,7 @@ import { NFeGerarDanfe } from './NFEGerarDanfe.js';
 import { NFCeGerarDanfe } from './NFCEGerarDanfe.js';
 import { NFSeGerarDanfe, NFSeGerarDanfeFromXml, NFSeDanfeGenerator } from './NFSeGerarDanfe.js';
 import { CTeGerarDacte } from './CTEGerarDacte.js';
+import { MDFE_GerarDamdfe } from './MDFEGerarDamdfe.js';
 import { XmlParser } from '@nfewizard/shared';
 import type { NFEGerarDanfeProps } from '@nfewizard/types/nfe';
 import type { CTEGerarDacteProps } from '@nfewizard/types/cte';
@@ -35,7 +36,7 @@ import type { NFSeGerarDanfeFromXmlProps, NFSeGerarDanfeProps } from './NFSeGera
 type NFCEGerarDanfePropsLocal = NFEGerarDanfeProps;
 
 // Exporta as classes originais
-export { NFeGerarDanfe, NFCeGerarDanfe, NFSeGerarDanfe, NFSeGerarDanfeFromXml, NFSeDanfeGenerator, CTeGerarDacte };
+export { NFeGerarDanfe, NFCeGerarDanfe, NFSeGerarDanfe, NFSeGerarDanfeFromXml, NFSeDanfeGenerator, CTeGerarDacte, MDFE_GerarDamdfe };
 export type { NFSeGerarDanfeProps, NFSeGerarDanfeFromXmlProps };
 export type {
     InfNFSe,
@@ -171,3 +172,5 @@ export async function CTE_GerarDacte(params: CTEGerarDacteProps | CTEGerarDacteP
 export async function NFSE_GerarDanfe(params: NFSeGerarDanfeProps) {
     return await NFSeGerarDanfe(params);
 }
+
+export type { MDFEGerarDamdfeProps } from './MDFEGerarDamdfe.js';
