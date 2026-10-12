@@ -138,3 +138,110 @@ describe('MDFE_GerarDamdfe: campos do leiaute 3.00 (RNTRC em infANTT, Anexo II d
     expect(perdidas).toEqual([]);
   });
 });
+
+// Chaves fictícias, distintas por município, para provar que cada uma sai sob o município a que pertence.
+const chaveNfe = (n: number) => '3526101234567800019555001' + String(n).padStart(9, '0') + '1000000001';
+const chaveCte = (n: number) => '3526101234567800019557001' + String(n).padStart(9, '0') + '1000000001';
+const municipio = (cod: string, nome: string, docs: string) => '<infMunDescarga><cMunDescarga>' + cod + '</cMunDescarga><xMunDescarga>' + nome + '</xMunDescarga>' + docs + '</infMunDescarga>';
+const nfes = (de: number, ate: number) => Array.from({ length: ate - de + 1 }, (_, i) => '<infNFe><chNFe>' + chaveNfe(de + i) + '</chNFe></infNFe>').join('');
+const comMunicipios = (xml: string, municipios: string) => xml.replace(/<infDoc>[\s\S]*<\/infDoc>/, '<infDoc>' + municipios + '</infDoc>');
+
+describe('MDFE_GerarDamdfe: documentos agrupados por município de descarga (Anexo II do MOC)', () => {
+  async function ler(xml: string, nome: string) {
+    const outputPath = '/tmp/mdfe-damdfe-' + nome + '.pdf';
+    const result = await MDFE_GerarDamdfe({ data: xml, outputPath });
+    const parsed = pdfParse(await fs.promises.readFile(outputPath));
+    return { result, texto: parsed.text };
+  }
+
+  it('cada chave sai embaixo do título do seu município, na ordem do XML', async () => {
+    const xml = comMunicipios(XML,
+      municipio('3550308', 'São Paulo', '<infCTe><chCTe>' + chaveCte(1) + '</chCTe></infCTe>' + nfes(1, 2)) +
+      municipio('3509502', 'Campinas', nfes(3, 3)));
+    const { texto } = await ler(xml, 'municipios');
+    const em = (s: string) => { const i = texto.indexOf(s); expect(i).toBeGreaterThanOrEqual(0); return i; };
+    const tituloSp = em('MUNICÍPIO DE DESCARGA: São Paulo (3550308)');
+    const tituloCampinas = em('MUNICÍPIO DE DESCARGA: Campinas (3509502)');
+    expect(tituloSp).toBeLessThan(tituloCampinas);
+    // as três de São Paulo ficam entre o título de São Paulo e o de Campinas; a de Campinas, depois do seu título
+    [chaveCte(1), chaveNfe(1), chaveNfe(2)].forEach((c) => {
+      expect(em(c)).toBeGreaterThan(tituloSp);
+      expect(em(c)).toBeLessThan(tituloCampinas);
+    });
+    expect(em(chaveNfe(3))).toBeGreaterThan(tituloCampinas);
+    expect(texto).toContain('3 documentos');
+    expect(texto).toContain('1 documento');
+    expect(texto).not.toContain('1 documentos');
+  });
+
+  it('o município que continua na folha seguinte repete o título, para a chave nunca ficar sem município', async () => {
+    const chaves = Array.from({ length: 30 }, (_, i) => i + 1);
+    const { result, texto } = await ler(comMunicipios(XML, municipio('3550308', 'São Paulo', nfes(1, 30))), 'continuacao');
+    expect(result.totalPaginas).toBeGreaterThan(1);
+    expect(texto).toContain('(continuação)');
+    const semEspacos = texto.replaceAll(' ', '');
+    expect(chaves.filter((n) => !semEspacos.includes(chaveNfe(n)))).toEqual([]);
+  });
+
+  it('o título de um município não fica sozinho no fim da folha', async () => {
+    // 16 linhas cabem na primeira folha: as 15 do primeiro município (título e 14 chaves) deixam uma só livre.
+    const xml = comMunicipios(XML, municipio('3550308', 'São Paulo', nfes(1, 14)) + municipio('3509502', 'Campinas', nfes(15, 17)));
+    const { result, texto } = await ler(xml, 'titulo-orfao');
+    expect(result.totalPaginas).toBe(2);
+    expect(texto.indexOf('MUNICÍPIO DE DESCARGA: Campinas')).toBeGreaterThan(texto.indexOf('2/2'));
+    expect(texto).not.toContain('(continuação)');
+  });
+
+  it('sem documento algum, diz que não há documentos vinculados', async () => {
+    const { texto } = await ler(XML.replace(/<infDoc>[\s\S]*<\/infDoc>/, ''), 'sem-documentos');
+    expect(texto).toContain('Sem documentos fiscais vinculados');
+    expect(texto).not.toContain('MUNICÍPIO DE DESCARGA');
+  });
+});
+
+// PNG 1x1 válido (vermelho), o mesmo de identidadeVisual.test.ts
+const LOGO = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  'base64',
+);
+const FAIXA_DO_VANIR = 'HOMOLOGAÇÃO — SEM VALOR FISCAL';
+
+describe('MDFE_GerarDamdfe: logo e faixa de ambiente do Vanir (como no DANFE e no DACTE)', () => {
+  const imagens = (pdf: Buffer) => (pdf.toString('latin1').match(/\/Subtype\s*\/Image/g) || []).length;
+  async function gerar(xml: string, nome: string, extras: { logo?: Buffer | null; faixaAmbiente?: string | null } = {}) {
+    const outputPath = '/tmp/mdfe-damdfe-' + nome + '.pdf';
+    await MDFE_GerarDamdfe({ data: xml, outputPath, ...extras });
+    const pdf = await fs.promises.readFile(outputPath);
+    return { pdf, texto: pdfParse(pdf).text };
+  }
+
+  it('com logo embute a imagem e mantém o emitente legível; sem logo, o desenho original', async () => {
+    const sem = await gerar(XML, 'sem-logo');
+    const com = await gerar(XML, 'com-logo', { logo: LOGO });
+    expect(imagens(com.pdf)).toBeGreaterThan(imagens(sem.pdf));
+    expect(com.texto).toContain('Transportadora Fictícia de Teste');
+    expect(com.texto).toContain('12345678000195');
+  });
+
+  it('a faixaAmbiente passada substitui o texto padrão da homologação', async () => {
+    const { texto } = await gerar(XML, 'faixa', { faixaAmbiente: FAIXA_DO_VANIR });
+    expect(texto).toContain('SEM VALOR FISCAL');
+    expect(texto).not.toContain('EMITIDO EM AMBIENTE DE HOMOLOGAÇÃO');
+  });
+
+  it('uma faixa personalizada aparece e o texto padrão não', async () => {
+    const { texto } = await gerar(XML, 'faixa-propria', { faixaAmbiente: 'FAIXA PROPRIA DO VANIR' });
+    expect(texto).toContain('FAIXA PROPRIA DO VANIR');
+    expect(texto).not.toContain('EMITIDO EM AMBIENTE');
+  });
+
+  it('em produção a faixa não sai, mesmo passada (a marca é de homologação)', async () => {
+    const { texto } = await gerar(XML.replace('<tpAmb>2</tpAmb>', '<tpAmb>1</tpAmb>'), 'faixa-producao', { faixaAmbiente: 'FAIXA PROPRIA DO VANIR' });
+    expect(texto).not.toContain('FAIXA PROPRIA DO VANIR');
+  });
+
+  it('logo e faixa nulos valem como ausentes', async () => {
+    const { texto } = await gerar(XML, 'nulos', { logo: null, faixaAmbiente: null });
+    expect(texto).toContain('EMITIDO EM AMBIENTE DE HOMOLOGAÇÃO');
+  });
+});

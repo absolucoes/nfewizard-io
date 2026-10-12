@@ -5,7 +5,17 @@ import QRCode from 'qrcode';
 import { parseStringPromise } from 'xml2js';
 
 type NodeXml = Record<string, any>;
-export type MDFEGerarDamdfeProps = { data: string; outputPath: string };
+/**
+ * `logo` (Buffer PNG/JPEG) e `faixaAmbiente` são correção do Vanir, iguais às do DANFE e do DACTE: o logo ocupa um
+ * quadro à esquerda do emitente, e a faixa substitui o texto padrão da marca de homologação (que só sai com tpAmb 2).
+ */
+export type MDFEGerarDamdfeProps = { data: string; outputPath: string; logo?: Buffer | null; faixaAmbiente?: string | null };
+const FAIXA_HOMOLOGACAO_PADRAO = 'EMITIDO EM AMBIENTE DE HOMOLOGAÇÃO – SEM VALOR FISCAL';
+/** Lado do quadro do logo, à esquerda do emitente. */
+const LOGO_LADO = 50;
+/** Uma linha da lista de documentos: o título de um município de descarga ou um documento dele. */
+type LinhaDoc = { tipo: 'municipio'; texto: string } | { tipo: 'documento'; especie: string; chave: string };
+type Municipio = { codigo: string; nome: string; docs: { type: string; key: string }[] };
 const MM = 72 / 25.4;
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
@@ -50,14 +60,44 @@ function descricaoReboque(v: NodeXml): string {
     if (value(v, 'capM3')) partes.push(value(v, 'capM3') + ' m³');
     return partes.filter(Boolean).join(' · ');
 }
-function header(doc: InstanceType<typeof PDFDocument>, emit: NodeXml, ide: NodeXml, key: string, page: number, pages: number, qr: Buffer, bar: Buffer, prot: NodeXml, w: number, tpAmb: string, rntrc: string) {
+/** Título de um município de descarga: nome, código IBGE e quantos documentos ele recebe. */
+function tituloMunicipio(m: Municipio): string {
+    const nome = [m.nome, m.codigo ? '(' + m.codigo + ')' : ''].filter(Boolean).join(' ') || 'Município não informado';
+    return 'MUNICÍPIO DE DESCARGA: ' + nome + ' · ' + m.docs.length + (m.docs.length === 1 ? ' documento' : ' documentos');
+}
+/**
+ * Distribui as linhas pelas folhas. Um título de município nunca fica sozinho no fim da folha, e o município que
+ * continua na folha seguinte repete o título com "(continuação)", para a chave nunca aparecer sem o seu município.
+ */
+function paginarDocumentos(municipios: Municipio[], porFolha: number): LinhaDoc[][] {
+    const folhas: LinhaDoc[][] = [[]];
+    const atual = () => folhas[folhas.length - 1];
+    const novaFolha = () => { folhas.push([]); };
+    for (const m of municipios) {
+        // O título precisa de pelo menos um documento embaixo; sem documento, de um lugar só para ele.
+        if (atual().length > 0 && atual().length + Math.min(2, 1 + m.docs.length) > porFolha) novaFolha();
+        atual().push({ tipo: 'municipio', texto: tituloMunicipio(m) });
+        m.docs.forEach((d) => {
+            if (atual().length >= porFolha) {
+                novaFolha();
+                atual().push({ tipo: 'municipio', texto: tituloMunicipio(m) + ' (continuação)' });
+            }
+            atual().push({ tipo: 'documento', especie: d.type, chave: d.key });
+        });
+    }
+    return folhas;
+}
+function header(doc: InstanceType<typeof PDFDocument>, emit: NodeXml, ide: NodeXml, key: string, page: number, pages: number, qr: Buffer, bar: Buffer, prot: NodeXml, w: number, tpAmb: string, rntrc: string, logo: Buffer | null, faixaAmbiente: string | null) {
     const x = MARGIN, q = 25 * MM;
+    // Com logo, o quadro ocupa a esquerda e o texto do emitente desloca; sem logo o leiaute original permanece.
+    const deslocamento = logo ? LOGO_LADO + 6 : 0;
+    if (logo) doc.image(logo, x, 24, { fit: [LOGO_LADO, LOGO_LADO], align: 'center', valign: 'center' });
     const end = emit.enderEmit || {};
     const address = [value(end, 'xLgr'), value(end, 'nro'), value(end, 'xBairro'), value(end, 'xMun'), value(end, 'UF'), value(end, 'CEP')].filter(Boolean).join(' - ');
     const cnpjLabel = value(emit, 'CNPJ') ? 'CNPJ' : 'CPF';
     const cnpj = value(emit, 'CNPJ') || value(emit, 'CPF');
-    doc.font('Helvetica-Bold').fontSize(11).text(value(emit, 'xNome'), x, 24, { width: w - q - 10, ellipsis: true });
-    doc.font('Helvetica').fontSize(8).text(address + '\n' + cnpjLabel + ': ' + cnpj + '  IE: ' + value(emit, 'IE') + '  RNTRC: ' + rntrc, x, 40, { width: w - q - 10, height: 38 });
+    doc.font('Helvetica-Bold').fontSize(11).text(value(emit, 'xNome'), x + deslocamento, 24, { width: w - q - 10 - deslocamento, ellipsis: true });
+    doc.font('Helvetica').fontSize(8).text(address + '\n' + cnpjLabel + ': ' + cnpj + '  IE: ' + value(emit, 'IE') + '  RNTRC: ' + rntrc, x + deslocamento, 40, { width: w - q - 10 - deslocamento, height: 38 });
     doc.image(qr, x + w - q, 24, { width: q, height: q });
     doc.font('Helvetica-Bold').fontSize(12).text('DAMDFE - Documento Auxiliar do Manifesto Eletrônico de Documentos Fiscais', x, 91, { width: w, align: 'center' });
     const cols = [38, 38, 54, 36, 170, 60, w - 396];
@@ -69,7 +109,8 @@ function header(doc: InstanceType<typeof PDFDocument>, emit: NodeXml, ide: NodeX
     doc.font('Helvetica').fontSize(7).text(key.replace(/(.{4})/g, '$1 ').trim(), x, 233, { width: w, align: 'center', characterSpacing: 0.3 });
     const auth = value(prot, 'nProt') ? 'Protocolo de autorização: ' + value(prot, 'nProt') + '  Recebido em: ' + value(prot, 'dhRecbto') : 'EMISSÃO EM CONTINGÊNCIA';
     doc.font('Helvetica-Bold').fontSize(8).text(auth, x, 247, { width: w, align: 'center' });
-    if (tpAmb === '2') doc.font('Helvetica-Bold').fontSize(10).text('EMITIDO EM AMBIENTE DE HOMOLOGAÇÃO – SEM VALOR FISCAL', x, 263, { width: w, align: 'center' });
+    // A faixa que o chamador passa substitui o texto padrão; como no DANFE e no DACTE, só sai em homologação (tpAmb 2).
+    if (tpAmb === '2') doc.font('Helvetica-Bold').fontSize(10).text(faixaAmbiente || FAIXA_HOMOLOGACAO_PADRAO, x, 263, { width: w, align: 'center' });
     field(doc, x, 282, w, 24, 'Modal', 'Rodoviário de Cargas');
 }
 export async function MDFE_GerarDamdfe(props: MDFEGerarDamdfeProps) {
@@ -82,12 +123,15 @@ export async function MDFE_GerarDamdfe(props: MDFEGerarDamdfeProps) {
     if (tpAmb !== '1' && tpAmb !== '2') throw new Error('DAMDFE_AMBIENTE_INVALIDO');
     const qrText = value(mdfe.infMDFeSupl, 'qrCodMDFe');
     if (!qrText) throw new Error('DAMDFE_QRCODE_AUSENTE');
-    const docs: { type: string; key: string }[] = [];
-    list(inf.infDoc?.infMunDescarga).forEach((m: NodeXml) => {
-        list(m.infCTe).forEach((d: NodeXml) => docs.push({ type: 'CT-e', key: value(d, 'chCTe') }));
-        list(m.infNFe).forEach((d: NodeXml) => docs.push({ type: 'NF-e', key: value(d, 'chNFe') }));
-        list(m.infMDFeTransp).forEach((d: NodeXml) => docs.push({ type: 'MDF-e', key: value(d, 'chMDFe') }));
+    // Os documentos ficam agrupados pelo município de descarga a que pertencem (Anexo II do MOC do MDF-e).
+    const municipios: Municipio[] = list(inf.infDoc?.infMunDescarga).map((m: NodeXml) => {
+        const docsDoMunicipio: Municipio['docs'] = [];
+        list(m.infCTe).forEach((d: NodeXml) => docsDoMunicipio.push({ type: 'CT-e', key: value(d, 'chCTe') }));
+        list(m.infNFe).forEach((d: NodeXml) => docsDoMunicipio.push({ type: 'NF-e', key: value(d, 'chNFe') }));
+        list(m.infMDFeTransp).forEach((d: NodeXml) => docsDoMunicipio.push({ type: 'MDF-e', key: value(d, 'chMDFe') }));
+        return { codigo: value(m, 'cMunDescarga'), nome: value(m, 'xMunDescarga'), docs: docsDoMunicipio };
     });
+    const totalDocs = municipios.reduce((n, m) => n + m.docs.length, 0);
     const qr = await QRCode.toBuffer(qrText, { width: 240, margin: 4 });
     const bar = await bwipjs.toBuffer({ bcid: 'code128', text: key, scaleX: 2, height: 20, includetext: false, paddingwidth: 10, paddingheight: 8 });
     const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margins: { top: 22, right: MARGIN, bottom: 22, left: MARGIN }, bufferPages: false, compress: false });
@@ -123,11 +167,12 @@ export async function MDFE_GerarDamdfe(props: MDFEGerarDamdfeProps) {
     // em toda folha, então a conta vale para todas; a soma é a mesma das linhas desenhadas no laço abaixo.
     const yDocs = 311 + 35 + 28 + 28 + 24 + 31 + 26 + 13 + LINHA_DOC + hReboques + hVale + hLacres;
     const porFolha = Math.max(1, Math.floor((PAGE_H - 22 - yDocs) / LINHA_DOC));
-    const pages = Math.max(1, Math.ceil(Math.max(docs.length, 1) / porFolha));
-    let start = 0;
+    const folhas: LinhaDoc[][] = totalDocs ? paginarDocumentos(municipios, porFolha) : [[]];
+    const pages = folhas.length;
+    const logo = props.logo || null, faixaAmbiente = props.faixaAmbiente || null;
     for (let page = 1; page <= pages; page++) {
         if (page > 1) doc.addPage();
-        header(doc, inf.emit || {}, inf.ide || {}, key, page, pages, qr, bar, prot, w, tpAmb, rntrc);
+        header(doc, inf.emit || {}, inf.ide || {}, key, page, pages, qr, bar, prot, w, tpAmb, rntrc, logo, faixaAmbiente);
         let y = 311;
         field(doc, MARGIN, y, w / 4, 30, 'Qtd. CT-e', String(cteCount), 'center');
         field(doc, MARGIN + w / 4, y, w / 4, 30, 'Qtd. NF-e', String(nfeCount), 'center');
@@ -157,13 +202,18 @@ export async function MDFE_GerarDamdfe(props: MDFEGerarDamdfeProps) {
         field(doc, MARGIN, y, 52, LINHA_DOC, 'Tipo', '');
         field(doc, MARGIN + 52, y, w - 52, LINHA_DOC, 'Chave de acesso', '');
         y += LINHA_DOC;
-        docs.slice(start, start + porFolha).forEach((d) => {
-            field(doc, MARGIN, y, 52, LINHA_DOC, '', d.type);
-            field(doc, MARGIN + 52, y, w - 52, LINHA_DOC, '', d.key);
+        folhas[page - 1].forEach((linha) => {
+            if (linha.tipo === 'municipio') {
+                // Título do município: faixa cinza de largura inteira, para separar os grupos de chaves.
+                doc.rect(MARGIN, y, w, LINHA_DOC).fillAndStroke('#e6e6e6', 'black');
+                doc.fillColor('black').font('Helvetica-Bold').fontSize(8).text(linha.texto, MARGIN + 3, y + 5, { width: w - 6, height: LINHA_DOC - 6, ellipsis: true });
+            } else {
+                field(doc, MARGIN, y, 52, LINHA_DOC, '', linha.especie);
+                field(doc, MARGIN + 52, y, w - 52, LINHA_DOC, '', linha.chave);
+            }
             y += LINHA_DOC;
         });
-        if (!docs.length) field(doc, MARGIN, y, w, LINHA_DOC, '', 'Sem documentos fiscais vinculados');
-        start += porFolha;
+        if (!totalDocs) field(doc, MARGIN, y, w, LINHA_DOC, '', 'Sem documentos fiscais vinculados');
     }
     doc.end();
     await ended;

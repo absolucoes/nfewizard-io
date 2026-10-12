@@ -22,6 +22,8 @@ Regra: correção sem teste que falhe sem ela não entra aqui.
 | danfe | DACTE com a mesma identidade visual do DANFE (logo e faixa), como no brief 08 do Vanir | idem (bloco `DACTE (CT-e)`) | idem | - |
 | danfe | DAMDFE lê o RNTRC de `rodo/infANTT/RNTRC`, onde o XSD 3.00 o põe, no cabeçalho e no campo do veículo de tração (`emit.RNTRC` e `veicTracao.RNTRC` ficam só como recurso, depois do `infANTT`); antes o campo saía vazio ("RNTRC:") | `packages/danfe/src/generators/MDFEGerarDamdfe.test.ts` (`o RNTRC vem de infANTT`, `infANTT tem prioridade`) | 2 testes falham | - |
 | danfe | DAMDFE com RENAVAM e tara do veículo de tração, reboques (placa, UF, RENAVAM, tara, capacidade), vale-pedágio (fornecedora, responsável, comprovante, valor) e lacres (do modal e do MDF-e), como no Anexo II do MOC; campos de reboque, vale-pedágio e lacres só aparecem quando informados e a lista de documentos recalcula quantos cabem por folha | idem (`traz RENAVAM e tara`, `reboques`, `vale-pedágio`, `lacres`, `sem reboque...`, `nenhum documento se perde`; os dois últimos são guarda e passam também sem a correção) | 4 testes falham | - |
+| danfe | DAMDFE com os documentos agrupados por município de descarga, como no Anexo II do MOC: cada município ganha um título (nome, código IBGE e quantos documentos), com as chaves de CT-e, NF-e e MDF-e dele embaixo; o título não fica sozinho no fim da folha, e o município que continua na folha seguinte repete o título com "(continuação)". Antes saía uma lista plana de tipo e chave, sem dizer a que município cada documento pertence | `packages/danfe/src/generators/MDFEGerarDamdfe.test.ts` (bloco `documentos agrupados por município de descarga`) | 3 testes falham (o de "sem documento" é guarda) | - |
+| danfe | DAMDFE honra `logo` (Buffer, quadro à esquerda do emitente com o texto deslocado) e `faixaAmbiente` (substitui o texto padrão da marca de homologação, que só sai com `tpAmb` 2), como o DANFE e o DACTE; antes ignorava os dois | idem (bloco `logo e faixa de ambiente do Vanir`) | 3 testes falham (o de produção e o de nulos são guarda) | - |
 | cte | `dhEvento` gerado pela lib em horário de Brasília, `AAAA-MM-DDThh:mm:ss-03:00`, sem milissegundos e sem `Z`, na origem, nos dois motores de evento; independe do fuso do processo | `packages/cte/src/services/CTERecepcaoEvento/__tests__/DhEvento.test.ts`; `.mjs` igual a `.cjs` em `pnpm --filter @nfewizard/cte test:dist` | 4 de 5 testes falham | - |
 | cte | `ide/toma4` na ordem do XSD (`toma` antes do documento); o tomador "outros" era recusado com `Element CNPJ is not expected. Expected is toma` | `packages/cte/src/services/CTEAutorizacao/__tests__/CTEAutorizacaoXsd.test.ts` | o teste de XML de referência falha com a rejeição acima | - |
 | cte | CT-e com expedidor e recebedor passa no `cte_v4.00.xsd` e bate com um XML de referência (golden) | idem, `ouro/cte-toma4-exped-receb.xml` | idem | - |
@@ -38,10 +40,6 @@ Regra: correção sem teste que falhe sem ela não entra aqui.
 - **Evento 610110 (prestação de serviço em desacordo, CT-e)**: não implementado de propósito na API de evento plana do fork
   (`CTEEventoCancCCeService`: cancelamento e CC-e, a que o Vanir usa). O evento existe só no motor genérico de eventos do
   upstream (`CTEWizard`/`CTERecepcaoEventoService`), mantido como veio, sem uso do fork. O Vanir não emite 610110 até haver caso de uso e homologação.
-
-## Dívida do DAMDFE
-
-- O DAMDFE ainda não agrupa os documentos por município de descarga (lista plana de tipo e chave) nem imprime logo e faixa de ambiente do emitente, como o DANFE e o DACTE.
 
 ## Pendente de conferência
 
