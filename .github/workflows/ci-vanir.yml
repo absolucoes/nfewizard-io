@@ -1,0 +1,38 @@
+name: CI do fork Vanir
+
+# O fork só é útil se `vanir/main` instala, compila e passa nos testes de todos os pacotes.
+# Este é o mesmo comando que o Vanir espera ver verde antes de consumir uma nova versão.
+on:
+  pull_request:
+    branches: [vanir/main]
+  push:
+    branches: [vanir/main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  construir-e-testar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      # xsd-schema-validator (shared) precisa de um JDK já no postinstall
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Instalar, compilar e testar
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm -r build
+          pnpm -r test
+      - name: Pacotes construídos carregam os XSD de fora do diretório do pacote
+        run: |
+          pnpm --filter @nfewizard/cte test:dist
+          pnpm --filter @nfewizard/mdfe test:dist
