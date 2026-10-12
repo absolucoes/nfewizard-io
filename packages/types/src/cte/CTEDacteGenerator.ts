@@ -1292,4 +1292,12 @@ export type CTEGerarDacteProps = {
      * @param {string} outputPath - Local onde o DACTE será gravado
      */
     outputPath: string;
+    /**
+     * @param {Buffer} logo - Logo do emitente (PNG/JPEG), opcional. Correção do Vanir.
+     */
+    logo?: Buffer;
+    /**
+     * @param {string} faixaAmbiente - Texto da faixa de homologação, opcional. Correção do Vanir.
+     */
+    faixaAmbiente?: string;
 };

@@ -147,6 +147,8 @@ class CTeGerarDacte {
     chave: string;
     enviada: boolean;
     outputPath: string;
+    logo: Buffer | null;
+    faixaAmbiente: string | null;
     documento: ValidaCPFCNPJ;
     protCTe: ProtCTe | undefined;
     ide: IdeCTe;
@@ -167,11 +169,14 @@ class CTeGerarDacte {
     qrcodeBuffer: Buffer | null = null;
 
     constructor(props: CTEGerarDacteProps) {
-        const { data, chave, outputPath } = props;
+        // Correção do Vanir: logo do emitente (Buffer PNG/JPEG) e texto da faixa de ambiente, ambos opcionais.
+        const { data, chave, outputPath, logo, faixaAmbiente } = props;
 
         this.data = data;
         this.chave = chave.trim();
         this.outputPath = outputPath;
+        this.logo = logo || null;
+        this.faixaAmbiente = faixaAmbiente || null;
         this.enviada = false;
         this.documento = new ValidaCPFCNPJ();
         this.protCTe = data.protCTe;
@@ -425,15 +430,26 @@ class CTeGerarDacte {
             this.doc.fontSize(5).text('IDENTIFICAÇÃO DO EMITENTE', 10, topIdentificacao + 3.5, {
                 characterSpacing: 0.5,
             });
-            this.doc.fontSize(8).font('Times-Bold').text(this.emit.xNome, 12, topIdentificacao + 14, {
+            // Com logo, reserva quadro 40x40 à esquerda e desloca os dados; sem logo o leiaute original permanece.
+            const temLogo = !!this.logo;
+            const textoEsquerda = temLogo ? 52 : 10;
+            const textoLargura = temLogo ? 139 : 183;
+            if (temLogo) {
+                this.doc.image(this.logo as Buffer, 10, topIdentificacao + 14, {
+                    fit: [40, 40],
+                    align: 'center',
+                    valign: 'center',
+                });
+            }
+            this.doc.fontSize(8).font('Times-Bold').text(this.emit.xNome, temLogo ? textoEsquerda : 12, topIdentificacao + 14, {
                 characterSpacing: 1,
-                width: 183,
+                width: textoLargura,
                 lineBreak: true,
                 lineGap: 3,
             });
-            this.doc.fontSize(6.5).font('Times-Roman').text(`${enderEmit.xLgr || ''}, ${enderEmit.nro || ''}${enderEmit.xCpl ? ` - ${enderEmit.xCpl}` : ''}`, 10, topIdentificacao + 44, {
+            this.doc.fontSize(6.5).font('Times-Roman').text(`${enderEmit.xLgr || ''}, ${enderEmit.nro || ''}${enderEmit.xCpl ? ` - ${enderEmit.xCpl}` : ''}`, textoEsquerda, topIdentificacao + 44, {
                 characterSpacing: 0.8,
-                width: 183,
+                width: textoLargura,
                 lineBreak: true,
                 lineGap: 2,
                 continued: true,
@@ -776,7 +792,7 @@ class CTeGerarDacte {
         // Marca d'água e aviso de homologação ocupam faixas distintas da caixa
         // de observações para não se sobreporem entre si.
         if (Number(this.ide.tpAmb) === 2) {
-            this.doc.fontSize(12).font('Times-Bold').fillColor('grey').text('AMBIENTE DE HOMOLOGAÇÃO - CT-E SEM VALOR FISCAL', left + 118, topObservacoes + 4, {
+            this.doc.fontSize(12).font('Times-Bold').fillColor('grey').text(this.faixaAmbiente || 'AMBIENTE DE HOMOLOGAÇÃO - CT-E SEM VALOR FISCAL', left + 118, topObservacoes + 4, {
                 characterSpacing: 1,
                 lineBreak: false,
             });
