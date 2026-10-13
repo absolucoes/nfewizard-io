@@ -34,6 +34,7 @@ Regra: correção sem teste que falhe sem ela não entra aqui.
 | mdfe | `ide` sai na sequência do XSD, qualquer que seja a ordem do payload | `MDFeSoap.test.ts` (`ordem de ide`) | 1 teste falha | - |
 | mdfe | XSD achados pelo caminho do módulo, não pelo `cwd` | `MDFeSoap.test.ts` (`caminho dos XSD`) e `pnpm --filter @nfewizard/mdfe test:dist` | 2 testes falham | - |
 | mdfe | Testes só com dados fictícios no formato dos exemplos públicos do leiaute e do WSDL; nenhum XML de emissão real | (regra para os testes do pacote) | - | - |
+| nfce | O CSC saía no header HTTP da autorização (`'CSC': tokenCSC`) e, com o header, no `logger.http`; nenhum webservice o pede, e ele só entra no hash do QR Code. Agora o header leva só `Content-Type` e `SOAPAction`. O pacote passa a ser publicado como `@absolucoes/nfewizard-nfce` (sétimo pacote) e sai o `NFCEAutorizacaoService.ts.maure.tmp` | `packages/nfce/src/services/NFCEAutorizacao/__tests__/CscForaDoHttp.test.ts` | 2 de 2 testes falham | - |
 
 ## Não implementado de propósito
 

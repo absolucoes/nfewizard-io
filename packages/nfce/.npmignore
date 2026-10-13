@@ -29,3 +29,10 @@ node_modules/
 
 # OS
 .DS_Store
+
+# Build cache e apoio de teste (fork Vanir: não vão no pacote publicado)
+.rollup.cache/
+jest.config.cjs
+**/*.test.d.ts
+**/__tests__/**
+**/*.tsbuildinfo
