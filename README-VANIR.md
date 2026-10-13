@@ -22,8 +22,8 @@ continua resolvendo. Nada novo sai delas.
 - **CI** (`ci-vanir.yml`): em PR e em push para `vanir/main`, `pnpm install --frozen-lockfile && pnpm -r build && pnpm -r test`.
 - **Sincronizar** (`sincronizar-upstream.yml`, diário e manual): traz o upstream por PR (verde, teste quebrado ou conflito). Nunca empurra
   em `vanir/main`, nunca cria tag. A entrada `ref` permite ensaiar com outro ponto do upstream.
-- **Publicar** (`publicar-vanir.yml`): a tag `vanir-v<N>` publica no GitHub Packages, com o mesmo N, os seis pacotes
-  `@absolucoes/nfewizard-{io,shared,types,cte,mdfe,danfe}@<versão do upstream>-vanir.<N>` (dist-tag `vanir`, acesso restrito).
+- **Publicar** (`publicar-vanir.yml`): a tag `vanir-v<N>` publica no GitHub Packages, com o mesmo N, os sete pacotes
+  `@absolucoes/nfewizard-{io,shared,types,cte,mdfe,danfe,nfce}@<versão do upstream>-vanir.<N>` (dist-tag `vanir`, acesso restrito).
   A tag precisa estar em `vanir/main`; N repetido é recusado.
 
 ## Instalar no Vanir

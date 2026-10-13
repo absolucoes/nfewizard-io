@@ -495,12 +495,11 @@ class NFCEAutorizacaoService extends BaseNFE implements NFCEAutorizacaoServiceIm
     protected async callWebService(xmlConsulta: string, webServiceUrl: string, ContentType: string, action: string, agent: Agent): Promise<AxiosResponse<any, any>> {
         const startTime = Date.now();
 
-        const { nfe: { tokenCSC } } = this.environment.getConfig();
-
+        // O CSC é segredo do contribuinte e só entra no hash do QR Code (infNFeSupl). Nenhum webservice da NFC-e o
+        // pede no HTTP; aqui ele ia no header e, com o header, para o log de comunicação.
         const headers = {
             'Content-Type': ContentType,
             'SOAPAction': action,
-            'CSC': tokenCSC,
         }
 
         logger.http('Iniciando comunicação com o webservice', {

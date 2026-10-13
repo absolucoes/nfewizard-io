@@ -1,6 +1,6 @@
 // Publicação do fork Vanir no GitHub Packages (usado por .github/workflows/publicar-vanir.yml).
 //
-//   node scripts/vanir/publicar.mjs <N> --verificar        recusa se algum dos seis pacotes já existe no registro
+//   node scripts/vanir/publicar.mjs <N> --verificar        recusa se algum dos sete pacotes já existe no registro
 //   node scripts/vanir/publicar.mjs <N> --empacotar <dir>  reescreve os package.json e gera os .tgz em <dir> (ensaio)
 //   node scripts/vanir/publicar.mjs <N> --publicar         reescreve os package.json e publica, na ordem das dependências
 //
@@ -20,6 +20,7 @@ const PACOTES = [
   { dir: 'types', alvo: '@absolucoes/nfewizard-types' },
   { dir: 'shared', alvo: '@absolucoes/nfewizard-shared' },
   { dir: 'danfe', alvo: '@absolucoes/nfewizard-danfe' },
+  { dir: 'nfce', alvo: '@absolucoes/nfewizard-nfce' },
   { dir: 'cte', alvo: '@absolucoes/nfewizard-cte' },
   { dir: 'mdfe', alvo: '@absolucoes/nfewizard-mdfe' },
   { dir: 'nfewizard-io', alvo: '@absolucoes/nfewizard-io' }
@@ -56,7 +57,7 @@ function reescrever(item) {
     for (const [nome, especificacao] of Object.entries(manifesto[campo] ?? {})) {
       if (!String(especificacao).startsWith('workspace:')) continue;
       const dependencia = porNome.get(nome);
-      if (!dependencia) fim(`${item.original} depende de ${nome} (${especificacao}), que não está entre os seis pacotes publicados.`);
+      if (!dependencia) fim(`${item.original} depende de ${nome} (${especificacao}), que não está entre os sete pacotes publicados.`);
       manifesto[campo][nome] = `npm:${dependencia.alvo}@${dependencia.versao}`;
     }
   }
@@ -76,7 +77,7 @@ function existeNoRegistro(item) {
 if (modo === '--verificar') {
   const existentes = plano.filter(existeNoRegistro).map((item) => `${item.alvo}@${item.versao}`);
   if (existentes.length) fim(`o N=${numero} já foi usado no registro: ${existentes.join(', ')}. Use o próximo número.`);
-  console.log(`N=${numero} livre nos seis pacotes: ${plano.map((item) => item.versao).filter((v, i, a) => a.indexOf(v) === i).join(', ')}`);
+  console.log(`N=${numero} livre nos sete pacotes: ${plano.map((item) => item.versao).filter((v, i, a) => a.indexOf(v) === i).join(', ')}`);
 } else {
   plano.forEach(reescrever);
   for (const item of plano) {
