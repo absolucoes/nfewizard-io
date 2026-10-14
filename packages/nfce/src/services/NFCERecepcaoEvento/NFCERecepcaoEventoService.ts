@@ -35,7 +35,35 @@ export class NFCERecepcaoEventoService extends BaseNFE implements NFERecepcaoEve
         this.xmlEventosNacionais = [];
         this.xmlEventosRegionais = [];
         this.xMotivoPorEvento = [];
-        console.log('constructor NFCERecepcaoEventoService');
+    }
+
+    /**
+     * Monta o detEvento na ordem que o XSD exige. O cancelamento comum (110111) segue como veio; o
+     * cancelamento por substituição (110112) tem grupo próprio (e110112_v1.00.xsd), em que a ordem dos
+     * campos é parte do leiaute e `descEvento`, sem acento, e `tpAutor` 1 são os únicos valores aceitos.
+     */
+    private montarDetEvento(tpEvento: string, detEvento: any, cOrgao: number) {
+        if (tpEvento !== '110112') return detEvento;
+
+        const { nProt, xJust, chNFeRef, verAplic, cOrgaoAutor } = detEvento || {};
+        if (!nProt) throw new Error('110112: informe detEvento.nProt, o protocolo de autorização da NFC-e a cancelar.');
+        if (typeof xJust !== 'string' || xJust.trim().length < 15) {
+            throw new Error('110112: detEvento.xJust deve ter no mínimo 15 caracteres.');
+        }
+        if (typeof chNFeRef !== 'string' || !/^[0-9A-Z]{44}$/.test(chNFeRef)) {
+            throw new Error('110112: detEvento.chNFeRef deve ser a chave de 44 posições da NFC-e substituta.');
+        }
+        if (!verAplic) throw new Error('110112: informe detEvento.verAplic, a versão do aplicativo autor do evento.');
+
+        return {
+            descEvento: 'Cancelamento por substituicao',
+            cOrgaoAutor: cOrgaoAutor ?? cOrgao,
+            tpAutor: 1,
+            verAplic,
+            nProt,
+            xJust: xJust.trim(),
+            chNFeRef,
+        };
     }
 
     /**
@@ -77,9 +105,10 @@ export class NFCERecepcaoEventoService extends BaseNFE implements NFERecepcaoEve
      * Verifica se o evento será disparado para o ambiente nacional ou para o estado pré-definido
      */
     private isAmbienteNacional(tpEvento: string) {
-        // Para NFCe, cancelamento (110111) é regional
+        // Para NFCe, cancelamento (110111) e cancelamento por substituição (110112) são regionais
         switch (tpEvento) {
             case '110111':
+            case '110112':
                 return false;
             default:
                 return false;
@@ -93,6 +122,8 @@ export class NFCERecepcaoEventoService extends BaseNFE implements NFERecepcaoEve
         switch (tpEvento) {
             case '110111':
                 return 'Cancelamento';
+            case '110112':
+                return 'Cancelamento por Substituição';
             default:
                 return 'Desconhecido';
         }
@@ -157,7 +188,7 @@ export class NFCERecepcaoEventoService extends BaseNFE implements NFERecepcaoEve
                         $: {
                             versao: "1.00",
                         },
-                        ...detEvento,
+                        ...this.montarDetEvento(tpEvento, detEvento, cOrgao),
                     },
                 }
             }

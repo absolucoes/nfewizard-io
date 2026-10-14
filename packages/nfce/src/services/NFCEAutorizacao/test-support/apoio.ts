@@ -101,8 +101,8 @@ export function qrCodeDoXml(xml: string): string {
 }
 
 /** Compara com o ouro; UPDATE_OURO=1 regrava (só para gerar o ouro de propósito). */
-export function conferirOuro(nome: string, xml: string) {
-    const arquivo = path.join(__dirname, '..', '__tests__', 'ouro', nome);
+export function conferirOuro(nome: string, xml: string, dirOuro: string = path.join(__dirname, '..', '__tests__', 'ouro')) {
+    const arquivo = path.join(dirOuro, nome);
     const atual = semAssinatura(xml);
     if (process.env.UPDATE_OURO === '1') {
         fs.mkdirSync(path.dirname(arquivo), { recursive: true });
