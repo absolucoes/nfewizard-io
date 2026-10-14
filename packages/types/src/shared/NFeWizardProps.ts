@@ -116,6 +116,13 @@ export type NFeWizardProps = {
          */
         idCSC?: number;
         /**
+         * @param {2 | 3} versaoQRCode - Versão do QR Code da NFC-e (padrão 2).
+         * 2 = hash SHA-1 com idCSC/tokenCSC (exige os dois).
+         * 3 = NT 2025.001: online sem CSC; off-line (tpEmis 4 e 9) assinado com a chave do certificado.
+         * Não exige idCSC nem tokenCSC.
+         */
+        versaoQRCode?: 2 | 3;
+        /**
          * @param {string} CSRT - Código de Segurança do Responsável Técnico (16 a 36 bytes alfanumérico)
          * Utilizado para gerar automaticamente o hashCSRT quando infRespTec.idCSRT for informado
          */

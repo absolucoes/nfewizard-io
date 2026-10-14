@@ -58,4 +58,13 @@ export type NFEGerarDanfeProps = {
      * Sem ele, vale o texto original da lib.
      */
     faixaAmbiente?: string;
+    /**
+     * @param {boolean} viaEstabelecimento - NFC-e: imprime a "Via do Estabelecimento" (título e linha de
+     * assinatura do consumidor), usada na contingência off-line. Correção do Vanir.
+     */
+    viaEstabelecimento?: boolean;
+    /**
+     * @param {boolean} cancelada - NFC-e: marca o DANFCE como "NFC-e CANCELADA". Correção do Vanir.
+     */
+    cancelada?: boolean;
 };

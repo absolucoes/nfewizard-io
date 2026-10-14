@@ -16,13 +16,29 @@
  */
 
 import { NFeWizardProps } from '@nfewizard/types/shared';
-import { Cancelamento } from '@nfewizard/types/nfe';
+import { Cancelamento, CancelamentoPorSubstituicao } from '@nfewizard/types/nfe';
 import { Environment, Utility, XmlBuilder, GerarConsulta, SaveFiles, logger } from '@nfewizard/shared';
 import { AxiosInstance } from 'axios';
 import { NFCEAutorizacaoService } from './services/NFCEAutorizacao/NFCEAutorizacaoService.js';
 import { NFCECancelamentoService } from './services/NFCERecepcaoEvento/NFCECancelamentoService.js';
 import { NFCEAutorizacao } from './operations/NFCEAutorizacao/NFCEAutorizacao.js';
 import { NFCECancelamento } from './operations/NFCERecepcaoEvento/NFCECancelamento.js';
+import { NFCEStatusServicoService } from './services/NFCEStatusServico/NFCEStatusServicoService.js';
+import { NFCEStatusServico } from './operations/NFCEStatusServico/NFCEStatusServico.js';
+
+/**
+ * Tira a chave de acesso das linhas impressas no console: a chave identifica a venda
+ * (e leva o CNPJ do emitente) e não deve ir parar em log de terminal. O retorno da
+ * função pública segue completo; só a tabela de acompanhamento perde a coluna.
+ */
+function semChaveDeAcesso(linhas: any): any {
+    if (!Array.isArray(linhas)) return linhas;
+    return linhas.map((linha) => {
+        if (!linha || typeof linha !== 'object') return linha;
+        const { chNFe, chave, chaveAcesso, ...resto } = linha;
+        return resto;
+    });
+}
 
 /**
  * Classe principal para operações NFCe
@@ -89,7 +105,7 @@ export class NFCEWizard {
             const response = await nfceAutorizacao.Exec(nfce);
 
             console.log('Retorno NFCE_Autorizacao');
-            console.table(response.xMotivo);
+            console.table(semChaveDeAcesso(response.xMotivo));
             console.log('===================================');
 
             return response.xmls
@@ -117,7 +133,7 @@ export class NFCEWizard {
             const response = await nfceAutorizacao.ExecTransmitirContingencia(nfce);
 
             console.log('Retorno NFCE_TransmitirContingencia');
-            console.table(response.xMotivo);
+            console.table(semChaveDeAcesso(response.xMotivo));
             console.log('===================================');
 
             return response.xmls;
@@ -175,13 +191,76 @@ export class NFCEWizard {
             const response = await nfceCancelamento.Exec(eventoComModelo);
 
             console.log('Retorno NFCE_Cancelamento');
-            console.table(response.xMotivos);
+            console.table(semChaveDeAcesso(response.xMotivos));
             console.log('===================================');
 
             return response;
         } catch (error: any) {
             logger.error(``, error, { context: 'NFCE_Cancelamento' });
             throw new Error(`NFCE_Cancelamento: ${error.message}`);
+        }
+    }
+
+    /**
+     * Cancelamento por substituição (evento 110112): cancela a NFC-e emitida em contingência
+     * off-line (tpEmis 9) depois que a substituta, com a chave em `chNFeRef`, foi autorizada.
+     * A lib preenche `tpEvento`, `descEvento` e `tpAutor`.
+     */
+    async NFCE_CancelamentoPorSubstituicao(evento: CancelamentoPorSubstituicao): Promise<any> {
+        try {
+            const eventoComModelo: any = {
+                idLote: evento.idLote,
+                modelo: '65',
+                evento: evento.evento.map((e) => ({ ...e, tpEvento: '110112' })),
+            };
+
+            const nfceCancelamentoService = new NFCECancelamentoService(
+                this.environment,
+                this.utility,
+                this.xmlBuilder,
+                this.axios,
+                this.saveFiles,
+                this.gerarConsulta
+            );
+            const nfceCancelamento = new NFCECancelamento(nfceCancelamentoService);
+            const response = await nfceCancelamento.Exec(eventoComModelo);
+
+            console.log('Retorno NFCE_CancelamentoPorSubstituicao');
+            console.table(semChaveDeAcesso(response.xMotivos));
+            console.log('===================================');
+
+            return response;
+        } catch (error: any) {
+            logger.error(``, error, { context: 'NFCE_CancelamentoPorSubstituicao' });
+            throw new Error(`NFCE_CancelamentoPorSubstituicao: ${error.message}`);
+        }
+    }
+
+    /**
+     * Status do serviço da SEFAZ para a NFC-e (modelo 65), no webservice próprio da NFC-e da UF.
+     * @returns Retorno da consulta (cStat, xMotivo, ...)
+     */
+    async NFCE_ConsultaStatusServico(): Promise<any> {
+        try {
+            const nfceStatusServicoService = new NFCEStatusServicoService(
+                this.environment,
+                this.utility,
+                this.xmlBuilder,
+                this.axios,
+                this.saveFiles,
+                this.gerarConsulta
+            );
+            const nfceStatusServico = new NFCEStatusServico(nfceStatusServicoService as any);
+            const response = await nfceStatusServico.Exec();
+
+            console.log('Retorno NFCE_ConsultaStatusServico');
+            console.table([{ cStat: response.cStat, xMotivo: response.xMotivo }]);
+            console.log('===================================');
+
+            return response;
+        } catch (error: any) {
+            logger.error(``, error, { context: 'NFCE_ConsultaStatusServico' });
+            throw new Error(`NFCE_ConsultaStatusServico: ${error.message}`);
         }
     }
 

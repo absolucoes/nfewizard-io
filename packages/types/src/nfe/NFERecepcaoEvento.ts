@@ -209,7 +209,7 @@ interface EventoCancelamento {
     /**
      * @param {string} tpEvento - 110111 Cancelamento - 110112 Cancelamento por substituição
      */
-    tpEvento: '110111' | '“110112';
+    tpEvento: '110111' | '110112';
     /**
      * @param {number} nSeqEvento - Sequencial do evento para o mesmo tipo de evento. Informar o valor “1” para este evento.
      */
@@ -257,6 +257,40 @@ interface EventoCancelamento {
         chNFeRef?: string;
     };
 }
+/**
+ * Cancelamento por substituição (110112) da NFC-e: cancela a nota emitida em contingência off-line
+ * que foi substituída por outra, já autorizada. `tpEvento`, `descEvento` e `tpAutor` a lib preenche.
+ */
+export interface EventoCancelamentoPorSubstituicao {
+    /** Ambiente: 1 produção, 2 homologação. */
+    tpAmb: number;
+    /** Código IBGE da UF que recebe o evento. */
+    cOrgao: number;
+    CNPJ?: string;
+    CPF?: string;
+    /** Chave da NFC-e a cancelar. */
+    chNFe: string;
+    dhEvento: string;
+    nSeqEvento: number;
+    verEvento: string;
+    detEvento: {
+        /** Protocolo de autorização da NFC-e a cancelar. */
+        nProt: string;
+        /** Justificativa, de 15 a 255 caracteres. */
+        xJust: string;
+        /** Chave da NFC-e substituta. */
+        chNFeRef: string;
+        /** Versão do aplicativo autor do evento. */
+        verAplic: string;
+        /** Código da UF do autor; se omitido, usa o `cOrgao`. */
+        cOrgaoAutor?: number;
+    };
+}
+export interface CancelamentoPorSubstituicao {
+    idLote: number;
+    evento: EventoCancelamentoPorSubstituicao[]
+}
+
 export interface Cancelamento {
     /**
      * @param {number} idLote - dentificador de controle do Lote de envio do Evento. Número sequencial único para identificação do Lote, de uso exclusivo do autor do evento. O Web Service não faz qualquer uso deste identificador.
