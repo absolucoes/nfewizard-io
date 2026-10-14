@@ -40,6 +40,8 @@ export const getSchema = (metodo: string) => {
     NFeDistribuicaoDFe: `${pathSchemas}/distDFeInt_v1.01.xsd`,
     NFEAutorizacao: `${pathSchemas}/enviNFe_v4.00.xsd`,
     NFeAutorizacao: `${pathSchemas}/enviNFe_v4.00.xsd`,
+    // Cancelamento por substituição (110112), NFC-e: o envEvento genérico não valida o detEvento deste evento
+    NFEEventoCancSubst: `${pathSchemas}/envEventoCancSubst_v1.00.xsd`,
     NFEInutilizacao: `${pathSchemas}/inutNFe_v4.00.xsd`,
     NFERetAutorizacao: `${pathSchemas}/consReciNFe_v4.00.xsd`,
     NfeConsultaCadastro: `${pathSchemas}/consCad_v2.00.xsd`,
