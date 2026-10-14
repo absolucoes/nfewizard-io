@@ -25,6 +25,20 @@ import { NFCEAutorizacao } from './operations/NFCEAutorizacao/NFCEAutorizacao.js
 import { NFCECancelamento } from './operations/NFCERecepcaoEvento/NFCECancelamento.js';
 
 /**
+ * Tira a chave de acesso das linhas impressas no console: a chave identifica a venda
+ * (e leva o CNPJ do emitente) e não deve ir parar em log de terminal. O retorno da
+ * função pública segue completo; só a tabela de acompanhamento perde a coluna.
+ */
+function semChaveDeAcesso(linhas: any): any {
+    if (!Array.isArray(linhas)) return linhas;
+    return linhas.map((linha) => {
+        if (!linha || typeof linha !== 'object') return linha;
+        const { chNFe, chave, chaveAcesso, ...resto } = linha;
+        return resto;
+    });
+}
+
+/**
  * Classe principal para operações NFCe
  * Fornece interface simplificada para autorização e consulta de NFCe
  * Segue o mesmo padrão de NFeWizard do pacote principal
@@ -89,7 +103,7 @@ export class NFCEWizard {
             const response = await nfceAutorizacao.Exec(nfce);
 
             console.log('Retorno NFCE_Autorizacao');
-            console.table(response.xMotivo);
+            console.table(semChaveDeAcesso(response.xMotivo));
             console.log('===================================');
 
             return response.xmls
@@ -117,7 +131,7 @@ export class NFCEWizard {
             const response = await nfceAutorizacao.ExecTransmitirContingencia(nfce);
 
             console.log('Retorno NFCE_TransmitirContingencia');
-            console.table(response.xMotivo);
+            console.table(semChaveDeAcesso(response.xMotivo));
             console.log('===================================');
 
             return response.xmls;
@@ -175,7 +189,7 @@ export class NFCEWizard {
             const response = await nfceCancelamento.Exec(eventoComModelo);
 
             console.log('Retorno NFCE_Cancelamento');
-            console.table(response.xMotivos);
+            console.table(semChaveDeAcesso(response.xMotivos));
             console.log('===================================');
 
             return response;

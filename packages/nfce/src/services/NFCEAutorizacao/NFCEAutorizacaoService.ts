@@ -19,7 +19,13 @@ import { XmlParser, Environment, Utility, XmlBuilder, ValidaCPFCNPJ, BaseNFE, mo
 import { GenericObject, LayoutNFe, NFe, ProtNFe } from '@nfewizard/types/nfe';
 import { GerarConsultaImpl, NFCEAutorizacaoServiceImpl, SaveFilesImpl } from '@nfewizard/types/shared';
 import { format } from 'date-fns';
-import { generateQRCodeURLOffline, generateQRCodeURLOnline } from './util/NFCEQRCode.js';
+import {
+    generateQRCodeURLOffline,
+    generateQRCodeURLOfflineV3,
+    generateQRCodeURLOnline,
+    generateQRCodeURLOnlineV3,
+    TipoIdDestinatarioQRCode,
+} from './util/NFCEQRCode.js';
 import xml2js, { Builder } from 'xml2js';
 import { NFCERetornoAutorizacaoService } from '../NFCERetornoAutorizacao/NFCERetornoAutorizacaoService.js';
 import { NFCERetornoAutorizacao } from '../../operations/NFCERetornoAutorizacao/NFCERetornoAutorizacao.js';
@@ -38,7 +44,7 @@ class NFCEAutorizacaoService extends BaseNFE implements NFCEAutorizacaoServiceIm
         const notas = Array.isArray(dataAsJson.NFe) ? dataAsJson.NFe : [dataAsJson.NFe];
 
         for (const nota of notas) {
-            const tpEmis = nota.infNFe.ide.tpEmis;
+            const tpEmis = Number(nota.infNFe.ide.tpEmis);
             if (![4, 9].includes(tpEmis)) {
                 throw new Error(`NFCE_TransmitirContingencia: tpEmis=${tpEmis} inválido. Use apenas tpEmis=4 (EPEC) ou tpEmis=9 (Off-line).`);
             }
@@ -179,14 +185,32 @@ class NFCEAutorizacaoService extends BaseNFE implements NFCEAutorizacaoServiceIm
     }
 
     private diaEmissao(dhEmi: string) {
-        // Converte a string para uma data
-        const dataAtual = new Date(dhEmi);
+        // O dia é o do próprio texto do dhEmi (AAAA-MM-DDThh:mm:ss-03:00), no fuso do emitente.
+        // new Date(...).getDate() usaria o fuso do processo (UTC no container) e erraria o dia
+        // entre 21:00 e 23:59 de Brasília.
+        const match = String(dhEmi).match(/^\d{4}-\d{2}-(\d{2})/);
+        if (match) return match[1];
+        return new Date(dhEmi).getUTCDate().toString().padStart(2, '0');
+    }
 
-        // Extrai o dia com dois dígitos
-        const dia = dataAtual.getDate().toString().padStart(2, '0');
+    /** Versão do QR Code configurada (padrão 2). */
+    private versaoQRCode(): 2 | 3 {
+        const versao = Number(this.environment.getConfig().nfe?.versaoQRCode ?? 2);
+        if (versao !== 2 && versao !== 3) {
+            throw new Error(`nfe.versaoQRCode=${versao} inválido. Use 2 ou 3.`);
+        }
+        return versao;
+    }
 
-        // Retorna o dia
-        return dia;
+    /** tp_idDest e idDest do QR Code v3 off-line: 1=CNPJ, 2=CPF, 3=idEstrangeiro; vazios sem destinatário. */
+    private identificarDestinatarioQRCode(dest: any): { tipo: TipoIdDestinatarioQRCode; id: string } {
+        if (!dest) return { tipo: '', id: '' };
+        if (dest.CNPJ) return { tipo: 1, id: String(dest.CNPJ) };
+        if (dest.CPF) return { tipo: 2, id: String(dest.CPF) };
+        if (dest.idEstrangeiro != null && String(dest.idEstrangeiro) !== '') {
+            return { tipo: 3, id: String(dest.idEstrangeiro) };
+        }
+        return { tipo: '', id: '' };
     }
 
     private calcularModulo11(sequencia: string) {
@@ -295,12 +319,14 @@ class NFCEAutorizacaoService extends BaseNFE implements NFCEAutorizacaoServiceIm
             const { tpEmis, mod, dhCont, xJust } = NFe.infNFe.ide;
 
             // Validação 1: Contingência off-line (tpEmis=9) só é permitida para NFC-e (mod=65)
-            if (tpEmis === 9 && mod !== 65) {
+            // tpEmis/mod podem chegar como texto quando o XML vem de fora (ex.: "9"); compara sempre como número
+            const emContingencia = [4, 9].includes(Number(tpEmis));
+            if (Number(tpEmis) === 9 && Number(mod) !== 65) {
                 throw new Error('Contingência off-line (tpEmis=9) só é permitida para NFC-e (mod=65)');
             }
 
             // Validação 2: Campos dhCont e xJust são obrigatórios quando tpEmis = 4 ou 9
-            if ([4, 9].includes(tpEmis)) {
+            if (emContingencia) {
                 if (!dhCont || dhCont.trim() === '') {
                     throw new Error(`Campo dhCont (Data e Hora de entrada em contingência) é obrigatório quando tpEmis=${tpEmis}`);
                 }
@@ -394,10 +420,14 @@ class NFCEAutorizacaoService extends BaseNFE implements NFCEAutorizacaoServiceIm
             }
 
             const { nfe: { idCSC, tokenCSC } } = this.environment.getConfig();
+            const versaoQRCode = this.versaoQRCode();
 
+            // v3 (NT 2025.001) não usa CSC; v2 exige idCSC e tokenCSC (comportamento histórico, inalterado)
             let qrCode = '';
-            if (![4, 9].includes(NFe.infNFe.ide.tpEmis)) {
-                qrCode = generateQRCodeURLOnline(chaveAcesso, '2', NFe.infNFe.ide.tpAmb, Number(idCSC), String(tokenCSC), this.utility);
+            if (!emContingencia) {
+                qrCode = versaoQRCode === 3
+                    ? generateQRCodeURLOnlineV3(chaveAcesso, NFe.infNFe.ide.tpAmb, this.utility)
+                    : generateQRCodeURLOnline(chaveAcesso, '2', NFe.infNFe.ide.tpAmb, Number(idCSC), String(tokenCSC), this.utility);
             }
 
             const urlConsultaNFCe = this.utility.getUrlNFCe('URL-ConsultaNFCe', false, '');
@@ -430,16 +460,21 @@ class NFCEAutorizacaoService extends BaseNFE implements NFCEAutorizacaoServiceIm
             const eventoXML = this.xmlBuilder.gerarXml(xmlObject, 'NFe', this.metodo)
             let xmlAssinado = this.xmlBuilder.assinarXML(eventoXML, 'infNFe')
 
-            if ([4, 9].includes(NFe.infNFe.ide.tpEmis)) {
-                // capturar digestValue
-                const digestValue = this.extrairDigestValue(xmlAssinado);
-
+            if (emContingencia) {
                 // substituir tag qrcode
                 const tpAmb = NFe.infNFe.ide.tpAmb;
                 const valNF = NFe.infNFe.total.ICMSTot.vNF;
 
                 const diaEmissao = this.diaEmissao(NFe.infNFe.ide.dhEmi);
-                qrCode = generateQRCodeURLOffline(chaveAcesso, '2', tpAmb, diaEmissao, valNF, digestValue, Number(idCSC), String(tokenCSC), this.utility);
+                if (versaoQRCode === 3) {
+                    // v3: assinatura RSA-SHA1 do texto com a chave do certificado; sem DigestValue nem CSC
+                    const { tipo, id } = this.identificarDestinatarioQRCode(NFe.infNFe.dest);
+                    qrCode = generateQRCodeURLOfflineV3(chaveAcesso, tpAmb, diaEmissao, valNF, tipo, id, this.environment.getCertKey(), this.utility);
+                } else {
+                    // capturar digestValue
+                    const digestValue = this.extrairDigestValue(xmlAssinado);
+                    qrCode = generateQRCodeURLOffline(chaveAcesso, '2', tpAmb, diaEmissao, valNF, digestValue, Number(idCSC), String(tokenCSC), this.utility);
+                }
 
                 xml2js.parseString(xmlAssinado, (err, result) => {
                     if (err) {
@@ -548,7 +583,7 @@ class NFCEAutorizacaoService extends BaseNFE implements NFCEAutorizacaoServiceIm
 
         // Verifica se está em contingência (tpEmis = 4 ou 9)
         const nfeData = Array.isArray(dataAsJson.NFe) ? dataAsJson.NFe[0] : dataAsJson.NFe;
-        const emContingencia = [4, 9].includes(nfeData.infNFe.ide.tpEmis);
+        const emContingencia = [4, 9].includes(Number(nfeData.infNFe.ide.tpEmis));
         
         try {
             // Gerando XML da NFC-e
@@ -595,7 +630,7 @@ class NFCEAutorizacaoService extends BaseNFE implements NFCEAutorizacaoServiceIm
                     }
                 });
 
-                const mensagemContingencia = nfeData.infNFe.ide.tpEmis === 4 
+                const mensagemContingencia = Number(nfeData.infNFe.ide.tpEmis) === 4
                     ? 'NFC-e gerada em Contingência EPEC (tpEmis=4)'
                     : 'NFC-e gerada em Contingência Off-line (tpEmis=9)';
 

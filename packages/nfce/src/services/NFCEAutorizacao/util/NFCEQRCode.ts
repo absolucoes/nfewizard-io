@@ -16,8 +16,15 @@
  */
 
 import { Utility } from '@nfewizard/shared';
-import { createHash } from 'crypto';
+import { createHash, createSign } from 'crypto';
 import sha1 from 'sha1';
+
+/**
+ * Tipo do identificador do destinatário no QR Code v3 off-line:
+ * 1 = CNPJ, 2 = CPF, 3 = idEstrangeiro. Sem destinatário, os dois campos
+ * (tp_idDest e idDest) seguem vazios, mantendo os pipes.
+ */
+export type TipoIdDestinatarioQRCode = 1 | 2 | 3 | '';
 
 // Função para gerar o hash SHA-1 em formato hexadecimal
 function generateSHA1Hash(input: string): string {
@@ -82,4 +89,69 @@ export function generateQRCodeURLOffline(
 
     // Montar URL
     return `${urlQRCodeNFCe}?p=${baseString}|${hash}`;
+}
+
+/**
+ * QR Code versão 3 (NT 2025.001) para emissão ONLINE:
+ * `<urlQRCode>?p=<chave>|3|<tpAmb>`. Não usa idCSC nem CSC.
+ */
+export function generateQRCodeURLOnlineV3(
+    chaveAcesso: string,
+    tipoAmbiente: number,
+    utility: Utility
+): string {
+    const urlQRCodeNFCe = utility.getUrlNFCe('URL-QRCode', false, '');
+    chaveAcesso = chaveAcesso.replace('NFe', '');
+    return `${urlQRCodeNFCe}?p=${chaveAcesso}|3|${tipoAmbiente}`;
+}
+
+/**
+ * Texto assinado do QR Code v3 off-line (sem a assinatura):
+ * `chave|3|tpAmb|dia|vNF|tp_idDest|idDest`.
+ */
+export function montarTextoQRCodeOfflineV3(
+    chaveAcesso: string,
+    tipoAmbiente: number,
+    diaDataEmissao: string,
+    valorTotalNfce: string,
+    tipoIdDestinatario: TipoIdDestinatarioQRCode,
+    idDestinatario: string
+): string {
+    return [
+        chaveAcesso.replace('NFe', ''),
+        '3',
+        String(tipoAmbiente),
+        diaDataEmissao,
+        valorTotalNfce,
+        String(tipoIdDestinatario),
+        idDestinatario,
+    ].join('|');
+}
+
+/**
+ * QR Code versão 3 para emissão OFFLINE (contingência):
+ * `<urlQRCode>?p=<texto>|<assinatura RSA-SHA1 em base64>`, assinando o texto
+ * com a chave privada do certificado do emitente. Não usa idCSC nem CSC.
+ */
+export function generateQRCodeURLOfflineV3(
+    chaveAcesso: string,
+    tipoAmbiente: number,
+    diaDataEmissao: string,
+    valorTotalNfce: string,
+    tipoIdDestinatario: TipoIdDestinatarioQRCode,
+    idDestinatario: string,
+    chavePrivadaPem: string,
+    utility: Utility
+): string {
+    const urlQRCodeNFCe = utility.getUrlNFCe('URL-QRCode', false, '');
+    const texto = montarTextoQRCodeOfflineV3(
+        chaveAcesso,
+        tipoAmbiente,
+        diaDataEmissao,
+        valorTotalNfce,
+        tipoIdDestinatario,
+        idDestinatario
+    );
+    const assinatura = createSign('RSA-SHA1').update(texto).sign(chavePrivadaPem, 'base64');
+    return `${urlQRCodeNFCe}?p=${texto}|${assinatura}`;
 }
