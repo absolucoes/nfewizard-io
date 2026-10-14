@@ -1,32 +1,47 @@
 /**
-    * @description      : 
+    * @description      : DANFE NFC-e (DANFCE), cupom em coluna única de 80 mm (ou 56 mm).
     * @author           : Marco Aurélio Silva Lima
-    * @group            : 
-    * @created          : 
-    * 
+    * @group            :
+    * @created          :
+    *
     * MODIFICATION LOG
     * - Version         : 1.0.0
     * - Date            : 3/7/2025
     * - Author          : Cassio Seffrin
-    * - Modification    : 
+    * - Modification    : Vanir (fork): reescrito segundo o Manual do DANFE NFC-e v6.0, ver CHANGELOG-VANIR.md
 **/
 /*
  * This file is part of NFeWizard-io.
- * 
+ *
  * NFeWizard-io is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NFeWizard-io is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with NFeWizard-io. If not, see <https://www.gnu.org/licenses/>.
  */
-import bwipjs from 'bwip-js';
+
+/*
+ * Fork Vanir. O gerador original desenhava com alturas fixas e tinha lacunas que o spike da NFC-e (fase 9)
+ * apontou: sem faixa de homologação, "Protocolo 123" inventado quando a nota ainda não tinha protocolo, data
+ * de autorização inventada (new Date()), data de emissão no fuso do processo, chave sem os blocos de 4,
+ * descrição de item cortada, "NaN" nos tributos quando vTotTrib não vem, troco lido do lugar errado.
+ *
+ * O desenho agora corre numa coluna só, em duas passadas: a primeira mede a altura total num documento
+ * descartável, a segunda cria a página com a altura exata (cupom contínuo, sem página em branco no fim).
+ *
+ * Ordem das divisões: I cabeçalho (logo, emitente, título); mensagem fiscal logo abaixo, para a marca de
+ * homologação, contingência ou cancelamento ser a primeira coisa lida; II detalhe da venda; III totais e
+ * pagamento; IV consulta pela chave; V QR Code (lado de no mínimo 25 mm); VI consumidor; VII identificação da
+ * NFC-e e protocolo (ou "Pendente de autorização"); IX informações de interesse do contribuinte. A via do
+ * estabelecimento acrescenta o título e a linha de assinatura do consumidor.
+ */
 import path from 'path';
 import { diretorioDoModulo } from './utils/DiretorioDoModulo.js';
 import fs from 'fs';
@@ -43,6 +58,42 @@ const dirDoModulo = diretorioDoModulo;
 // Rollup faz bundle em dist/index.mjs, então dist/ -> ../resources/
 const fontDir = path.resolve(dirDoModulo, '../resources/fonts/ARIAL.TTF');
 const fontDirBold = path.resolve(dirDoModulo, '../resources/fonts/ARIALBD.TTF');
+
+/** 1 mm em pontos do PDF. */
+const MM = 72 / 25.4;
+/** Largura padrão do cupom, 80 mm. */
+const LARGURA_80MM = 80 * MM;
+/** Lado mínimo do QR Code no papel, 25 mm (Manual do DANFE NFC-e). */
+const QR_MINIMO = 25 * MM;
+/** Tamanho mínimo de letra: abaixo disso o cupom de 56 mm deixa de ser legível na térmica. */
+const FONTE_MINIMA = 5;
+
+const TEXTO_HOMOLOGACAO = 'EMITIDA EM AMBIENTE DE HOMOLOGAÇÃO – SEM VALOR FISCAL';
+
+/** 1234.5 -> "1.234,50", sem depender dos dados de locale do Node. */
+function numero(valor: unknown, minDec = 2, maxDec = 2): string {
+    const n = Number(valor);
+    const fixo = (Number.isFinite(n) ? n : 0).toFixed(maxDec);
+    let [inteiro, dec = ''] = fixo.split('.');
+    while (dec.length > minDec && dec.endsWith('0')) dec = dec.slice(0, -1);
+    inteiro = inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return dec ? `${inteiro},${dec}` : inteiro;
+}
+
+/**
+ * "2026-10-13T22:30:00-03:00" -> "13/10/2026 22:30:00", lendo o texto e não o fuso do processo
+ * (em UTC, `new Date().getHours()` daria 01:30 do dia 14).
+ */
+function dataHora(iso?: string): string {
+    if (!iso) return '';
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}:${m[6]}`;
+    try {
+        return format(parseISO(String(iso)), 'dd/MM/yyyy HH:mm:ss');
+    } catch {
+        return String(iso);
+    }
+}
 
 class NFCeGerarDanfe {
     data: NFEGerarDanfeProps['data'];
@@ -66,18 +117,31 @@ class NFCeGerarDanfe {
     larguraPadrao: number;
     documentWidth: number;
     itemHeight: number;
-    doc: InstanceType<typeof PDFDocument>;
+    doc!: InstanceType<typeof PDFDocument>;
+
+    private logo: Buffer | null;
+    private faixaAmbiente: string | null;
+    private viaEstabelecimento: boolean;
+    private cancelada: boolean;
+    private margem = 5.67;
+    private y = 0;
+    private qr: { buffer: Buffer; lado: number } | null = null;
 
     constructor(props: NFEGerarDanfeProps) {
-        const { data, chave, outputPath, pageWidth } = props;
+        const { data, chave, outputPath, pageWidth, logo, faixaAmbiente, viaEstabelecimento, cancelada } = props;
 
         this.data = data;
-        this.chave = chave.trim();
+        // a chave pode chegar como "NFe4126..." ou com espaços: só os 44 dígitos valem
+        this.chave = String(chave || '').replace(/\D/g, '');
         this.outputPath = outputPath;
         this.enviada = false; // Valor padrão
         this.qrcodePath = outputPath; // Caminho padrão
         this.documento = new ValidaCPFCNPJ(); // Inicialização correta
         this.protNFe = data.protNFe;
+        this.logo = logo || null;
+        this.faixaAmbiente = faixaAmbiente || null;
+        this.viaEstabelecimento = !!viaEstabelecimento;
+        this.cancelada = !!cancelada;
 
         const nfeData = Array.isArray(data.NFe) ? data.NFe[0] : data.NFe;
         const { det, ide, emit, dest, total, transp, pag, infAdic } = nfeData.infNFe;
@@ -93,45 +157,41 @@ class NFCeGerarDanfe {
         this.infNFeSupl = infNFeSupl;
         if (dest) this.dest = dest;
 
-        if (this.protNFe?.infProt.nProt) {
-            this.enviada = true;
-        }
+        this.enviada = this.temProtocolo();
 
-        function calculateHeight(itemsLength: number, itemHeight: number) {
-            const headerHeight = 34.22975675056; // Altura do cabeçalho
-            const footerHeight = 170; // Altura do rodapé -> 34.22975675056
+        this.larguraPadrao = LARGURA_80MM;
+        this.documentWidth = pageWidth || LARGURA_80MM; // 56 mm = 158.74
+        // 7 pt em 80 mm; encolhe junto com a largura, mas nunca abaixo de 5 pt
+        this.fontSize = Math.max(FONTE_MINIMA, (7 * this.documentWidth) / this.larguraPadrao);
+        this.itemHeight = this.fontSize * 1.116;
+    }
 
-            // Altura total é a soma das alturas dos itens + cabeçalho + rodapé
-            return headerHeight + footerHeight + (itemsLength * itemHeight) + 5 + (nfeData.infNFe.infAdic?.infCpl ? 14 : 0);
-        }
+    /**
+     * Só protocolo de verdade conta. Na contingência sem transmissão o serviço devolve um protNFe de mentira
+     * (nProt "CONTINGENCIA", cStat 000): isso é "pendente de autorização", não uma nota autorizada.
+     */
+    private temProtocolo(): boolean {
+        const prot = this.protNFe?.infProt;
+        if (!prot?.nProt) return false;
+        if (String(prot.nProt).toUpperCase() === 'CONTINGENCIA') return false;
+        const cStat = prot.cStat === undefined || prot.cStat === null ? '' : String(prot.cStat);
+        return cStat === '' || cStat === '100' || cStat === '150';
+    }
 
-        function calculateFontSize(width: number) {
-            // Aqui você pode ajustar a fórmula para atender às suas necessidades
-            return Math.min(width) * 0.02646;
-        }
+    private get itens(): DetProd[] {
+        return Array.isArray(this.det) ? this.det : [this.det];
+    }
 
-        this.larguraPadrao = 226.772;
-        this.documentWidth = pageWidth || 226.772; // 158.74
-        // const pageHeight = 300;
-        let itensLength = 1;
-        if (this.det instanceof Array) {
-            itensLength = this.det.length;
-        }
+    private get larguraUtil(): number {
+        return this.documentWidth - 2 * this.margem;
+    }
 
-        const fontSize = calculateFontSize(this.documentWidth);
-        this.fontSize = fontSize;
+    private get emContingencia(): boolean {
+        return [4, 9].includes(Number(this.ide.tpEmis));
+    }
 
-        this.itemHeight = fontSize * 1.116;
-        const pageHeight = calculateHeight(itensLength, this.itemHeight);
-
-        this.doc = new PDFDocument({
-            margins: { top: 5.67, right: 5.67, bottom: 5.67, left: 5.67 },
-            size: [this.documentWidth, pageHeight],
-            bufferPages: true,
-            layout: 'portrait',
-        });
-        this.doc.registerFont('Arial', fontDir)
-        this.doc.registerFont('Arial-bold', fontDirBold)
+    private get emHomologacao(): boolean {
+        return Number(this.ide.tpAmb) === 2;
     }
 
     saveQRCode = async (text: string) => {
@@ -172,429 +232,336 @@ class NFCeGerarDanfe {
         }
     }
 
-    async generateBarcode(data: string) {
-        try {
-            const png = await bwipjs.toBuffer({
-                bcid: 'code128',       // Tipo de código de barras
-                text: data,            // Dado a ser codificado
-                scaleX: 4,             // Fator de escala
-                height: 14,            // Altura da barra
-                includetext: false,    // Incluir texto
-            });
-            const barcode = png.toString('base64');
-            const buffer: any = Buffer.from(barcode, 'base64')
-            const barcodeDir = this.qrcodePath;
-            const barcodeFilePath = path.join(barcodeDir, 'barcode.png');
-            // this.createDir(barcodeDir);
-            fs.writeFileSync(barcodeFilePath, buffer);
-        } catch (err) {
-            console.error('Erro ao gerar código de barras:', err);
-            return null;
-        }
-    }
+    // ---------------------------------------------------------------------------------------------
+    // Infraestrutura de desenho
+    // ---------------------------------------------------------------------------------------------
 
-    centeredPos(texto: string) {
-        const larguraPagina = this.doc.page.width;
-        const larguraTexto = this.doc.fontSize(this.fontSize).widthOfString(texto);
-        const posicaoX = (larguraPagina - larguraTexto) / 2;
-        return posicaoX;
-    }
-
-    ajustarPosicao(posicaoOriginal: number, novaLargura: number) {
-        return posicaoOriginal * (novaLargura / this.larguraPadrao);
-    }
-
-    calculaPosicao(text: string) {
-        const { right, left } = this.doc.page.margins;
-        const [pageWidth] = this.doc.page.size;
-
-        const textWidth = this.doc.widthOfString(text);
-        return Number(pageWidth) - textWidth - right - left;
-    }
-
-    drawHeader(isFirstPage: boolean) {
-        this._buildHeader();
-    }
-
-    drawFooter(qrCodeBuffer: Buffer) {
-        this._buildFooter(qrCodeBuffer);
-    }
-
-    _buildHeader() {
-        const CNPJCPF = this.emit.CNPJCPF?.toString()
-        const CNPJ = this.emit.CNPJ?.toString()
-        const CPF = this.emit.CPF?.toString()
-        const documento = this.documento.mascaraCnpjCpf(CNPJCPF || CNPJ || CPF || '')
-
-        const identificationJoined = `${this.emit.enderEmit.xLgr}, ${this.emit.enderEmit.nro}, ${this.emit.enderEmit.xBairro}, ${this.emit.enderEmit.UF}`
-
-        /** IDENTIFICACAO EMITENTE */
-        const _buildIdentificacaoEmit = () => {
-            const centeredPosEmit = this.centeredPos(`CNPJ: ${documento} ${this.emit.xNome}`)
-            const centeredPosEnd = this.centeredPos(identificationJoined)
-            const centeredPosText = this.centeredPos('Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica')
-
-            this.doc.font('Arial').fontSize(this.fontSize).text(`CNPJ: ${documento} `, centeredPosEmit, 2, {
-                lineBreak: false,
-            })
-                .font('Arial-bold').text(this.emit.xNome)
-                .fontSize(this.fontSize)
-                .font('Arial')
-                .text(identificationJoined, centeredPosEnd)
-                .text('Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica', centeredPosText);
-
-            // Adiciona mensagem de contingência se tpEmis = 4 ou 9 (NT 2018.006)
-            if ([4, 9].includes(this.ide.tpEmis)) {
-                const msgContingencia = 'EMITIDA EM CONTINGÊNCIA';
-                const centeredPosContingencia = this.centeredPos(msgContingencia);
-                this.doc.font('Arial-bold')
-                    .fontSize(this.fontSize + 2)
-                    .text(msgContingencia, centeredPosContingencia, this.doc.y + 2);
-            }
-        }
-
-        _buildIdentificacaoEmit();
-    }
-
-    _buildProdutos() {
-        const { right, left, top } = this.doc.page.margins;
-        const tableWidth = this.documentWidth - left - right;
-        const startX = left;
-        const tableTop = this.doc.y + top;
-        const columnRatios = {
-            codigo: 0.15,
-            descricao: 0.40,
-            qtdeUn: 0.15,
-            unit: 0.15,
-            total: 0.15
-        };
-        const columnSpacing = 0;
-        const columnWidths = {
-            codigo: tableWidth * columnRatios.codigo,
-            descricao: tableWidth * columnRatios.descricao,
-            qtdeUn: tableWidth * columnRatios.qtdeUn,
-            unit: tableWidth * columnRatios.unit,
-            total: tableWidth * columnRatios.total
-        };
-        const header = (top: number) => {
-            let x = startX;
-            this.doc.font('Arial-bold').fontSize(this.fontSize).text('Código', x, top, { width: columnWidths.codigo });
-            x += columnWidths.codigo + columnSpacing;
-            this.doc.text('Descrição', x, top, { width: columnWidths.descricao });
-            x += columnWidths.descricao + columnSpacing;
-            this.doc.text('Qtde', x, top, { width: columnWidths.qtdeUn, align: 'right' });
-            x += columnWidths.qtdeUn + columnSpacing;
-            this.doc.text('Unit', x, top, { width: columnWidths.unit, align: 'right' });
-            x += columnWidths.unit + columnSpacing;
-            this.doc.text('Total', x, top, { width: columnWidths.total, align: 'right' });
-        };
-
-        const row = (top: number, item: DetProd) => {
-            const quant = parseFloat(String(item.prod.qCom || item.prod.qTrib)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
-            const valUnit = parseFloat(String(item.prod.vUnCom || item.prod.vUnTrib || '0')).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            const valLiq = parseFloat(String(item.prod.vProd || '0')).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-            let x = startX;
-            this.doc.font('Arial').fontSize(this.fontSize).text(item.prod.cProd, x, top, {
-                width: columnWidths.codigo,
-                align: 'left' as const
-            });
-
-            x += columnWidths.codigo + columnSpacing;
-
-
-            const descricao = item.prod.xProd.slice(0, 120); // Limite de 120 caracteres
-            const textWidth = this.doc.widthOfString(descricao);
-            const lineCount = Math.ceil(textWidth / columnWidths.descricao);
-
-            const descricaoOptions = {
-                width: columnWidths.descricao,
-                align: 'left' as const,
-                height: this.itemHeight * lineCount
-            };
-
-            this.doc.text(descricao, x, top, descricaoOptions);
-            x += columnWidths.descricao + columnSpacing;
-
-            this.doc.text(`${quant} ${item.prod.uCom}`, x, top, {
-                width: columnWidths.qtdeUn,
-                align: 'right'
-            });
-            x += columnWidths.qtdeUn + columnSpacing;
-
-            this.doc.text(valUnit, x, top, {
-                width: columnWidths.unit,
-                align: 'right'
-            });
-            x += columnWidths.unit + columnSpacing;
-
-            this.doc.text(valLiq, x, top, {
-                width: columnWidths.total,
-                align: 'right'
-            });
-
-
-            return descricaoOptions.height;
-        };
-        header(tableTop);
-        let y = tableTop + this.itemHeight;
-        if (this.det instanceof Array) {
-            this.det.forEach((prod) => {
-                row(y, prod);
-                y += this.itemHeight;
-            });
-        } else {
-            row(y, this.det);
-        }
-    }
-    _buildTotais() {
-
-        let tableTop = this.doc.y + 5;
-
-        const quantidadeTotalDeItens = Array.isArray(this.det) ? this.det.length : 1;
-
-        let valTotal = 0;
-        let acrescimo = 0;
-        let desconto = 0;
-
-        if (Array.isArray(this.det)) {
-            // Calcula o valor total dos produtos
-            valTotal = this.det.reduce((sum, item) => sum + parseFloat(item.prod.vProd), 0);
-
-            // Calcula o total dos acréscimos
-            acrescimo = this.det.reduce((sum, item) =>
-                sum + (parseFloat(item.prod.vFrete || '0') + parseFloat(item.prod.vSeg || '0') + parseFloat(item.prod.vOutro || '0')), 0
-            );
-
-            // Calcula o total dos descontos
-            desconto = this.det.reduce((sum, item) => sum + parseFloat(item.prod.vDesc || '0'), 0);
-        } else {
-            // Calcula o valor total do produto, os acréscimos, e desconto caso não seja um array
-            valTotal = parseFloat(this.det.prod.vProd);
-            acrescimo = parseFloat(this.det.prod.vFrete || '0') + parseFloat(this.det.prod.vSeg || '0') + parseFloat(this.det.prod.vOutro || '0');
-            desconto = parseFloat(this.det.prod.vDesc || '0')
-        }
-        const valorTotal = valTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
-        const acrescimoTotal = acrescimo.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
-        const descontoTotal = desconto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
-
-        this.doc.text('Qtd. total de itens', 2, tableTop);
-        this.doc.text(String(quantidadeTotalDeItens), this.calculaPosicao(String(quantidadeTotalDeItens)), tableTop, {
-            align: 'right',
+    private novoDocumento(altura: number) {
+        const doc = new PDFDocument({
+            // margem de baixo zero: a altura já é exata, e o pdfkit não pode abrir página nova por arredondamento
+            margins: { top: this.margem, right: this.margem, bottom: 0, left: this.margem },
+            size: [this.documentWidth, altura],
+            layout: 'portrait',
         });
-        tableTop += this.itemHeight;
-
-        this.doc.text('Valor total R$', 2, tableTop);
-        this.doc.text(valorTotal, this.calculaPosicao(valorTotal), tableTop, {
-            align: 'right',
-        });
-
-        tableTop += this.itemHeight;
-
-        if (desconto > 0) {
-            this.doc.text('Desconto R$', 2, tableTop);
-            this.doc.text(descontoTotal, this.calculaPosicao(descontoTotal), tableTop, {
-                align: 'right',
-            });
-            tableTop += this.itemHeight;
-        }
-        if (acrescimo > 0) {
-            this.doc.text('Acréscimo R$', 2, tableTop);
-            this.doc.text(acrescimoTotal, this.calculaPosicao(acrescimoTotal), tableTop, {
-                align: 'right',
-            });
-            tableTop += this.itemHeight;
-        }
-
-        if (desconto > 0 || acrescimo > 0) {
-            const totalPagar = parseFloat(String(valTotal + acrescimo - desconto)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
-
-            this.doc.font('Arial-bold').text('Valor a Pagar R$', 2, tableTop);
-            this.doc.text(totalPagar, this.calculaPosicao(totalPagar), tableTop, {
-                align: 'right',
-            });
-        }
-
-        tableTop += this.itemHeight + 2;
-
-        this.doc.font('Arial').text('FORMA PAGAMENTO', 2, tableTop);
-
-        // Tipos
-
-        let topTiposPag = tableTop;
-        if (Array.isArray(this.pag.detPag)) {
-            for (let pagto of this.pag.detPag) {
-                if (!pagto.xPag) pagto.xPag = getDesTipoPag(pagto.tPag);
-                this.doc.text(pagto.xPag || 'Não informado', 2, topTiposPag + this.itemHeight);
-                topTiposPag += this.itemHeight;
-            }
-        } else {
-            if (!this.pag.detPag.xPag) this.pag.detPag.xPag = getDesTipoPag(this.pag.detPag.tPag);
-            this.doc.text(this.pag.detPag.xPag || 'Não informado', 2, topTiposPag + this.itemHeight);
-        }
-
-        this.doc.text('VALOR PAGO R$', this.calculaPosicao('VALOR PAGO R$'), tableTop, {
-            align: 'right',
-        });
-
-        // Valores
-        let topValPags = tableTop;
-        if (Array.isArray(this.pag.detPag)) {
-            for (let pagto of this.pag.detPag) {
-                const val = parseFloat(pagto.vPag).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
-                this.doc.text(val, this.calculaPosicao(val), topValPags + this.itemHeight, {
-                    align: 'right',
-                });
-                topValPags += this.itemHeight;
-            }
-        } else {
-            const val = parseFloat(this.pag.detPag.vPag).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
-            this.doc.text(val, this.calculaPosicao(val), topValPags + this.itemHeight, {
-                align: 'right',
-            });
-        }
-
-        tableTop = topValPags;
-        tableTop += 2 * this.itemHeight;
-
-        let valTroco = 0;
-        if (Array.isArray(this.pag.detPag)) {
-            valTroco = this.pag.detPag.reduce((sum, item) => sum + parseFloat(item.vTroco || '0'), 0);
-        } else {
-            valTroco = parseFloat(this.pag.detPag.vTroco || '0');
-        }
-
-        const troco = valTroco.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
-
-        this.doc.text('Troco R$', 2, tableTop);
-        this.doc.text(troco, this.calculaPosicao(troco), tableTop, {
-            align: 'right',
-        });
-
+        doc.registerFont('Arial', fontDir);
+        doc.registerFont('Arial-bold', fontDirBold);
+        return doc;
     }
 
-    _buildFooter(qrCodeBuffer: Buffer) {
-        let tableTop = this.doc.y + 5;
+    private fonte(negrito = false, tamanho = this.fontSize) {
+        this.doc.font(negrito ? 'Arial-bold' : 'Arial').fontSize(tamanho);
+    }
 
-        this.doc.font('Arial-bold').text('Consulte pela Chave de Acesso em', 0, tableTop, {
-            align: 'center'
-        });
-        tableTop += this.itemHeight;
+    /** Parágrafo na largura útil; avança o cursor pela altura que o texto de fato ocupa. */
+    private bloco(
+        texto: string,
+        opcoes: { negrito?: boolean; tamanho?: number; align?: 'left' | 'center' | 'right'; depois?: number } = {},
+    ): number {
+        const { negrito = false, tamanho = this.fontSize, align = 'left', depois = 0 } = opcoes;
+        this.fonte(negrito, tamanho);
+        const largura = this.larguraUtil;
+        const altura = this.doc.heightOfString(texto, { width: largura, align });
+        this.doc.text(texto, this.margem, this.y, { width: largura, align });
+        this.y += altura + depois;
+        return altura;
+    }
 
-        this.doc.font('Arial').text(this.infNFeSupl?.urlChave || '', 0, tableTop, {
-            align: 'center'
-        });
-        tableTop += this.itemHeight;
+    /** Rótulo à esquerda e valor à direita na mesma linha. */
+    private linhaPar(esquerda: string, direita: string, negrito = false) {
+        this.fonte(negrito);
+        const altura = this.doc.currentLineHeight(true);
+        this.doc.text(esquerda, this.margem, this.y, { width: this.larguraUtil, lineBreak: false });
+        this.doc.text(direita, this.margem, this.y, { width: this.larguraUtil, align: 'right', lineBreak: false });
+        this.y += altura;
+    }
 
-        this.doc.text(this.protNFe?.infProt.chNFe || '', 0, tableTop, {
-            align: 'center'
-        });
+    private separador() {
+        this.y += 1.5;
+        this.doc
+            .lineWidth(0.5)
+            .dash(1, { space: 1 })
+            .moveTo(this.margem, this.y)
+            .lineTo(this.margem + this.larguraUtil, this.y)
+            .stroke()
+            .undash();
+        this.y += 2.5;
+    }
 
-        tableTop += this.itemHeight;
-        // const filePath = path.resolve(baseDir, this.qrcodePath);
-        // this.doc.image(`${filePath}/qrcode.png`, 2, tableTop, { width: 70.87, height: 70.87 });
-        this.doc.image(qrCodeBuffer, 2, tableTop, { width: 70.87, height: 70.87 });
+    // ---------------------------------------------------------------------------------------------
+    // Divisões
+    // ---------------------------------------------------------------------------------------------
 
+    /** I. Cabeçalho: logo opcional, emitente, título. */
+    private cabecalho() {
+        if (this.viaEstabelecimento) {
+            this.bloco('VIA DO ESTABELECIMENTO', { negrito: true, tamanho: this.fontSize + 1, align: 'center', depois: 2 });
+        }
 
-        tableTop += 4;
-        let topBeforeQrCode = tableTop;
+        if (this.logo) {
+            const imagem = (this.doc as any).openImage(this.logo);
+            const escala = Math.min((this.larguraUtil * 0.5) / imagem.width, (36 * this.fontSize / 7) / imagem.height);
+            const largura = imagem.width * escala;
+            const altura = imagem.height * escala;
+            this.doc.image(this.logo, this.margem + (this.larguraUtil - largura) / 2, this.y, { width: largura, height: altura });
+            this.y += altura + 3;
+        }
 
-        const CNPJCPF = this.documento.mascaraCnpjCpf(
-            this.dest?.CNPJCPF || this.dest?.CNPJ || this.dest?.CPF || this.dest?.idEstrangeiro || ''
+        const documento = this.documento.mascaraCnpjCpf(
+            String(this.emit.CNPJCPF || this.emit.CNPJ || this.emit.CPF || ''),
         );
-        const xNome = this.dest?.xNome ?? 'Sem cliente identificado';
-        const xLgr = this.dest?.enderDest?.xLgr ?? '';
-        const nro = this.dest?.enderDest?.nro ?? '';
-        const xBairro = this.dest?.enderDest?.xBairro ?? null;
-        const xMun = this.dest?.enderDest?.xMun ?? '';
-        const UF = this.dest?.enderDest?.UF ?? '';
-        const enderecoPartes = [
-            xLgr && `${xLgr}`,
-            nro && `${nro}`,
-            xBairro && `bairro: ${xBairro}`,
-            xMun && `${xMun}`,
-            UF && `${UF}`
-        ].filter(Boolean);
-        const enderecoStr = enderecoPartes.join(', ');
-        if (CNPJCPF && CNPJCPF !== '') {
-            this.doc.font('Arial-bold')
-                .text(`CONSUMIDOR - DOC ${CNPJCPF}`, 75, tableTop, {
-                    align: 'left',
-                    lineGap: 1
-                })
-                .font('Arial')
-                .text(` - ${xNome}`, {
-                    lineGap: 1
-                });
-            tableTop = this.doc.y + 4;
-            this.doc.text(enderecoStr, 75, tableTop);
-            tableTop = this.doc.y + 8;
-        } else {
-            this.doc.text('CONSUMIDOR NÃO IDENTIFICADO', 75, tableTop, {
-                align: 'left',
-            });
-            tableTop = this.doc.y + 8;
-        }
+        const e = this.emit.enderEmit;
+        const endereco = [
+            [e.xLgr, e.nro, (e as any).xCpl, e.xBairro].filter(Boolean).join(', '),
+            [e.xMun, e.UF].filter(Boolean).join(' - '),
+            e.CEP ? `CEP ${String(e.CEP).replace(/^(\d{5})(\d{3})$/, '$1-$2')}` : '',
+        ].filter(Boolean).join(', ');
 
+        this.bloco(`CNPJ: ${documento}`, { align: 'center' });
+        this.bloco(String(this.emit.xNome || ''), { negrito: true, align: 'center' });
+        this.bloco(endereco, { align: 'center', depois: 2 });
+        this.bloco('DANFE NFC-e', { negrito: true, align: 'center' });
+        this.bloco('Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica', { align: 'center' });
+        this.bloco('Não permite aproveitamento de crédito de ICMS', { align: 'center' });
+    }
 
-        const data = parseISO(this.ide.dhEmi);
-        const dtaEmi = format(data, 'dd/MM/yyyy HH:mm:ss');
+    /** Mensagem fiscal: homologação, contingência e cancelamento ficam em caixa, logo abaixo do cabeçalho. */
+    private mensagemFiscal() {
+        const mensagens: string[] = [];
+        if (this.emHomologacao) mensagens.push(this.faixaAmbiente || TEXTO_HOMOLOGACAO);
+        if (this.emContingencia) mensagens.push('EMITIDA EM CONTINGÊNCIA');
+        if (this.cancelada) mensagens.push('NFC-e CANCELADA');
+        if (!mensagens.length) return;
 
-        let dtaAut = format(new Date(), 'dd/MM/yyyy HH:mm:ss');
-        if (this.protNFe?.infProt.dhRecbto) {
-            const dataAut = parseISO(this.protNFe?.infProt.dhRecbto);
-            dtaAut = format(dataAut, 'dd/MM/yyyy HH:mm:ss');
-        }
+        this.y += 2;
+        const tamanho = this.fontSize + 1;
+        const interna = this.larguraUtil - 6;
+        this.fonte(true, tamanho);
+        const alturas = mensagens.map((m) => this.doc.heightOfString(m, { width: interna, align: 'center' }));
+        const caixa = alturas.reduce((a, b) => a + b, 0) + 4 + (mensagens.length - 1) * 2;
 
-        this.doc.font('Arial-bold')
-            .text(`NFC-e nº ${this.ide.nNF} Série ${this.ide.serie} ${dtaEmi}`, 75, tableTop, {
-                align: 'left',
-                lineGap: 1
-            })
-            .text('Protocolo de autorização: ', {
-                continued: true,
-                lineGap: 1,
-            })
-            .font('Arial')
-            .text(this.protNFe?.infProt.nProt || '123')
-            .font('Arial-bold')
-            .text('Data de autorização ', {
-                continued: true,
-                lineGap: 1,
-            })
-            .font('Arial')
-            .text(dtaAut);
-
-        tableTop = this.doc.y + 20;
-        topBeforeQrCode += 70.87
-        this.doc.text(`Tributos Totais Incidentes (Lei Federal 12.741/2012): R$ ${parseFloat(String(this.total.ICMSTot.vTotTrib) || '0').toFixed(2)}`, 0, topBeforeQrCode, {
-            align: 'center'
+        this.doc.lineWidth(0.8).rect(this.margem, this.y, this.larguraUtil, caixa).stroke();
+        let topo = this.y + 2;
+        mensagens.forEach((m, i) => {
+            this.fonte(true, tamanho);
+            this.doc.text(m, this.margem + 3, topo, { width: interna, align: 'center' });
+            topo += alturas[i] + 2;
         });
-        if (this.infAdic?.infCpl) {
-            this.doc.text(String(this.infAdic.infCpl), 0, topBeforeQrCode + 12, {
-                align: 'center'
-            });
+        this.y += caixa + 2;
+    }
+
+    /** II. Detalhe da venda: código, descrição completa (quebra de linha), quantidade, unitário e total. */
+    private detalhe() {
+        const util = this.larguraUtil;
+        const col = {
+            codigo: util * 0.17,
+            descricao: util * 0.33,
+            qtde: util * 0.17,
+            unit: util * 0.15,
+            total: util * 0.18,
+        };
+        const linha = (
+            celulas: [string, number, 'left' | 'right'][],
+            negrito: boolean,
+        ) => {
+            this.fonte(negrito);
+            const altura = Math.max(...celulas.map(([texto, largura, align]) => this.doc.heightOfString(texto, { width: largura, align })));
+            let x = this.margem;
+            for (const [texto, largura, align] of celulas) {
+                this.doc.text(texto, x, this.y, { width: largura, align });
+                x += largura;
+            }
+            this.y += altura + 1;
+        };
+
+        linha([
+            ['Código', col.codigo, 'left'],
+            ['Descrição', col.descricao, 'left'],
+            ['Qtde UN', col.qtde, 'right'],
+            ['Vl Unit', col.unit, 'right'],
+            ['Vl Total', col.total, 'right'],
+        ], true);
+
+        for (const item of this.itens) {
+            const p = item.prod;
+            linha([
+                [String(p.cProd ?? ''), col.codigo, 'left'],
+                [String(p.xProd ?? ''), col.descricao, 'left'],
+                [`${numero(p.qCom || p.qTrib, 2, 4)} ${p.uCom ?? ''}`.trim(), col.qtde, 'right'],
+                [numero(p.vUnCom || p.vUnTrib, 2, 4), col.unit, 'right'],
+                [numero(p.vProd), col.total, 'right'],
+            ], false);
         }
+    }
+
+    /** III. Totais e informações de pagamento. */
+    private totais() {
+        const t: any = this.total?.ICMSTot ?? {};
+        const soma = (campo: 'vProd' | 'vDesc' | 'vFrete' | 'vSeg' | 'vOutro') =>
+            this.itens.reduce((s, i) => s + Number((i.prod as any)[campo] || 0), 0);
+
+        const valorTotal = t.vProd !== undefined ? Number(t.vProd) : soma('vProd');
+        const desconto = t.vDesc !== undefined ? Number(t.vDesc) : soma('vDesc');
+        const acrescimos = t.vFrete !== undefined || t.vSeg !== undefined || t.vOutro !== undefined
+            ? Number(t.vFrete || 0) + Number(t.vSeg || 0) + Number(t.vOutro || 0)
+            : soma('vFrete') + soma('vSeg') + soma('vOutro');
+        const valorAPagar = t.vNF !== undefined ? Number(t.vNF) : valorTotal + acrescimos - desconto;
+
+        this.linhaPar('Qtd. total de itens', String(this.itens.length));
+        this.linhaPar('Valor total R$', numero(valorTotal));
+        if (desconto > 0) this.linhaPar('Desconto R$', numero(desconto));
+        if (acrescimos > 0) this.linhaPar('Acréscimos R$', numero(acrescimos));
+        this.linhaPar('Valor a Pagar R$', numero(valorAPagar), true);
+
+        this.y += 2;
+        this.linhaPar('FORMA DE PAGAMENTO', 'VALOR PAGO R$', true);
+        const pagamentos: any[] = Array.isArray(this.pag.detPag) ? this.pag.detPag : [this.pag.detPag];
+        for (const pagto of pagamentos) {
+            this.linhaPar(String(pagto.xPag || getDesTipoPag(pagto.tPag) || 'Não informado'), numero(pagto.vPag));
+        }
+
+        // vTroco é do grupo pag (NT 2016/002); só na falta dele soma o que vier nos detPag
+        const troco = this.pag.vTroco !== undefined && this.pag.vTroco !== null
+            ? Number(this.pag.vTroco)
+            : pagamentos.reduce((s, p) => s + Number(p.vTroco || 0), 0);
+        this.linhaPar('Troco R$', numero(troco));
+    }
+
+    /** IV. Consulta pela chave de acesso, a chave em onze blocos de quatro dígitos. */
+    private consulta() {
+        this.bloco('Consulte pela Chave de Acesso em', { negrito: true, align: 'center' });
+        if (this.infNFeSupl?.urlChave) this.bloco(String(this.infNFeSupl.urlChave), { align: 'center' });
+
+        const blocos = (this.chave.match(/.{1,4}/g) || []).join(' ');
+        if (blocos) {
+            // numa linha só: encolhe a letra até caber, sem passar de fontSize nem baixar de FONTE_MINIMA
+            this.fonte(false, 10);
+            const largura10 = this.doc.widthOfString(blocos);
+            const tamanho = Math.max(FONTE_MINIMA, Math.min(this.fontSize, (this.larguraUtil / largura10) * 10));
+            this.bloco(blocos, { tamanho, align: 'center' });
+        }
+    }
+
+    /** V. QR Code, centralizado, com lado de no mínimo 25 mm. */
+    private qrCode() {
+        if (!this.qr) return;
+        this.bloco('Consulta via leitor de QR Code', { negrito: true, align: 'center', depois: 1 });
+        const { buffer, lado } = this.qr;
+        this.doc.image(buffer, this.margem + (this.larguraUtil - lado) / 2, this.y, { width: lado, height: lado });
+        this.y += lado + 3;
+    }
+
+    /** VI. Consumidor. */
+    private consumidor() {
+        const d: any = this.dest;
+        const cnpjcpf = String(d?.CNPJCPF || d?.CNPJ || d?.CPF || '').replace(/\D/g, '');
+        const estrangeiro = d?.idEstrangeiro ? String(d.idEstrangeiro) : '';
+
+        if (!cnpjcpf && !estrangeiro) {
+            this.bloco('CONSUMIDOR NÃO IDENTIFICADO', { negrito: true, align: 'center' });
+            return;
+        }
+        const rotulo = cnpjcpf ? (cnpjcpf.length === 14 ? 'CNPJ' : 'CPF') : 'ID ESTRANGEIRO';
+        const id = cnpjcpf ? this.documento.mascaraCnpjCpf(cnpjcpf) : estrangeiro;
+        this.bloco(`CONSUMIDOR - ${rotulo} ${id}`, { negrito: true, align: 'center' });
+        if (d?.xNome) this.bloco(String(d.xNome), { align: 'center' });
+
+        const e = d?.enderDest;
+        const endereco = e
+            ? [e.xLgr, e.nro, e.xBairro && `bairro: ${e.xBairro}`, e.xMun, e.UF].filter(Boolean).join(', ')
+            : '';
+        if (endereco) this.bloco(endereco, { align: 'center' });
+    }
+
+    /** VII. Identificação da NFC-e e protocolo; sem protocolo, "Pendente de autorização". */
+    private identificacao() {
+        const via = this.viaEstabelecimento ? 'Via Estabelecimento' : 'Via Consumidor';
+        this.bloco(
+            `NFC-e nº ${this.ide.nNF} Série ${this.ide.serie} ${dataHora(this.ide.dhEmi)} - ${via}`,
+            { negrito: true, align: 'center' },
+        );
+        const prot = this.protNFe?.infProt;
+        if (this.enviada && prot) {
+            this.bloco(`Protocolo de autorização: ${prot.nProt}`, { align: 'center' });
+            this.bloco(`Data de autorização ${dataHora(prot.dhRecbto)}`, { align: 'center' });
+        } else {
+            this.bloco('Pendente de autorização', { negrito: true, align: 'center' });
+        }
+    }
+
+    /** IX. Informações de interesse do contribuinte e tributos totais (Lei 12.741/2012). */
+    private interesseDoContribuinte() {
+        const vTotTrib = (this.total?.ICMSTot as any)?.vTotTrib;
+        if (vTotTrib !== undefined && vTotTrib !== null && vTotTrib !== '') {
+            this.bloco(`Tributos Totais Incidentes (Lei Federal 12.741/2012): R$ ${numero(vTotTrib)}`, { align: 'center' });
+        }
+        if (this.infAdic?.infCpl) this.bloco(String(this.infAdic.infCpl), { align: 'center' });
+    }
+
+    /** Via do estabelecimento: espaço e linha para a assinatura do consumidor. */
+    private assinaturaDoConsumidor() {
+        this.y += 16;
+        this.doc.lineWidth(0.5).moveTo(this.margem + 10, this.y).lineTo(this.margem + this.larguraUtil - 10, this.y).stroke();
+        this.y += 2;
+        this.bloco('Assinatura do consumidor', { align: 'center' });
+    }
+
+    /** Desenha tudo em `this.doc` e devolve o y em que terminou. */
+    private construir(): number {
+        this.y = this.margem;
+        this.cabecalho();
+        this.mensagemFiscal();
+        this.separador();
+        this.detalhe();
+        this.separador();
+        this.totais();
+        this.separador();
+        this.consulta();
+        this.separador();
+        this.qrCode();
+        this.consumidor();
+        this.separador();
+        this.identificacao();
+        this.separador();
+        this.interesseDoContribuinte();
+        if (this.viaEstabelecimento) this.assinaturaDoConsumidor();
+        return this.y;
+    }
+
+    private async prepararQRCode() {
+        const texto = this.infNFeSupl?.qrCode;
+        if (!texto) throw new Error('NFC-e sem infNFeSupl.qrCode: o DANFCE não pode ser gerado sem o QR Code');
+        const modulos = (QRCode.create(texto, {}) as any).modules.size as number;
+        // 0,35 mm por módulo é o que a leitura em térmica pede; e nunca menos de 25 mm de lado
+        const lado = Math.max(QR_MINIMO, modulos * 0.35 * MM);
+        const buffer = await QRCode.toBuffer(texto, {
+            margin: 0,
+            scale: 8,
+            color: { dark: '#000000', light: '#FFFFFF' },
+        });
+        this.qr = { buffer, lado };
     }
 
     async generatePDF(exibirMarcaDaguaDanfe?: boolean) {
         try {
             this.exibirMarcaDaguaDanfe = exibirMarcaDaguaDanfe ?? true;
+            await this.prepararQRCode();
 
-            // await this.saveQRCode(this.infNFeSupl?.qrCode  || '')
-            const qrCodeBuffer = await this.getQRCodeBuffer(this.infNFeSupl?.qrCode || '');
-
-            this.doc.pipe(fs.createWriteStream(this.outputPath));
-
-            this.drawHeader(true);
-
-            this._buildProdutos();
-
-            this._buildTotais();
-
-            this.drawFooter(qrCodeBuffer);
-
+            // 1ª passada: mede a altura num documento descartável, alto o bastante para nada quebrar página
+            this.doc = this.novoDocumento(30000);
+            const fim = this.construir();
             this.doc.end();
+
+            // 2ª passada: a página com a altura exata
+            this.doc = this.novoDocumento(Math.ceil((fim + this.margem) * 100) / 100);
+            const saida = fs.createWriteStream(this.outputPath);
+            const gravado = new Promise<void>((resolve, reject) => {
+                saida.on('finish', () => resolve());
+                saida.on('error', reject);
+            });
+            this.doc.pipe(saida);
+            this.construir();
+            this.doc.end();
+            await gravado;
 
             return {
                 message: `  DANFE Gerada em '${this.outputPath}'`,

@@ -29,5 +29,13 @@ export type NFEGerarDanfeProps = {
      * @param {number} pageWidth - Largura da Página
      */
     pageWidth?: number;
+    /** Logo do emitente (PNG/JPEG), opcional. */
+    logo?: Buffer;
+    /** Texto da faixa de homologação, opcional. */
+    faixaAmbiente?: string;
+    /** NFC-e: imprime a "Via do Estabelecimento". */
+    viaEstabelecimento?: boolean;
+    /** NFC-e: marca o DANFCE como "NFC-e CANCELADA". */
+    cancelada?: boolean;
 };
 //# sourceMappingURL=NFEDanfeGenerator.d.ts.map
