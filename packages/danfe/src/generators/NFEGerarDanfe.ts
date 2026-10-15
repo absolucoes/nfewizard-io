@@ -23,6 +23,7 @@ import { format, parseISO } from 'date-fns';
 import PDFDocument from 'pdfkit';
 import { ValidaCPFCNPJ } from '@nfewizard/shared';
 import { getCstOrCsosn } from './utils/getCstOrCsosn';
+import { dataHoraDoXml } from './utils/dataHoraDoXml.js';
 
 // Suporte para módulos ES
 const dirDoModulo = diretorioDoModulo;
@@ -160,7 +161,7 @@ class NFeGerarDanfe {
         this.doc.fontSize(5).text(`RECEBEMOS DE ${this.emit.xNome} OS PRODUTOS / SERVIÇOS CONSTANTES DA NOTA FISCAL INDICADO AO LADO`, 10, 26, {
             characterSpacing: 0.5
         });
-        this.doc.fontSize(6).text(`EMISSÃO: ${format(new Date(this.ide.dhEmi), 'dd-MM-yyyy')} -  DEST. / REM.: ${this.dest?.xNome || ''}  -  VALOR TOTAL: R$ ${this.formatDecimal(this.total.ICMSTot.vNF)}`, 10, 33.5, {
+        this.doc.fontSize(6).text(`EMISSÃO: ${dataHoraDoXml(this.ide.dhEmi, 'data', '-')} -  DEST. / REM.: ${this.dest?.xNome || ''}  -  VALOR TOTAL: R$ ${this.formatDecimal(this.total.ICMSTot.vNF)}`, 10, 33.5, {
             characterSpacing: 0.5
         });
         /** RIGHT */
@@ -350,7 +351,7 @@ class NFeGerarDanfe {
             if (Number(this.ide.tpAmb) === 2 || this.enviada) {
                 let dhRecbto = '';
                 if (this.protNFe?.infProt.dhRecbto) {
-                    dhRecbto = format(new Date(this.protNFe?.infProt.dhRecbto), 'dd/MM/yyyy HH:mm:ss')
+                    dhRecbto = dataHoraDoXml(this.protNFe?.infProt.dhRecbto, 'dataHora')
                 }
                 const xProtNfe = `${String(this.protNFe?.infProt.nProt || '')} ${dhRecbto}`;
                 this.doc.fontSize(5).text('PROTOCOLO DE AUTORIZAÇÃO DE USO', left + 314.2, topIdentificacao_1 + 102, {
@@ -426,7 +427,7 @@ class NFeGerarDanfe {
             this.doc.fontSize(5).text('DATA DA EMISSÃO', left + 496, topDestinatario + 125, {
                 characterSpacing: 0.5,
             });
-            this.doc.fontSize(8).text(format(new Date(this.ide.dhEmi), 'dd-MM-yyyy'), left + 497, topDestinatario + 135, {
+            this.doc.fontSize(8).text(dataHoraDoXml(this.ide.dhEmi, 'data', '-'), left + 497, topDestinatario + 135, {
                 characterSpacing: 1,
             });
         }
@@ -495,7 +496,7 @@ class NFeGerarDanfe {
             this.doc.fontSize(5).text('DATA SAÍDA / ENTRADA', left + 496, topDestinatario + 148, {
                 characterSpacing: 0.5,
             });
-            this.doc.fontSize(8).text(this.ide.dhSaiEnt ? format(new Date(this.ide.dhSaiEnt), 'dd-MM-yyyy') : '', left + 497, topDestinatario + 158, {
+            this.doc.fontSize(8).text(this.ide.dhSaiEnt ? dataHoraDoXml(this.ide.dhSaiEnt, 'data', '-') : '', left + 497, topDestinatario + 158, {
                 characterSpacing: 1,
             });
         }
@@ -536,7 +537,7 @@ class NFeGerarDanfe {
             this.doc.fontSize(5).text('HORA DA SAÍDA', left + 496, topDestinatario + 171, {
                 characterSpacing: 0.5,
             });
-            this.doc.fontSize(8).text(this.ide.dhSaiEnt ? format(new Date(this.ide.dhSaiEnt), 'HH:mm') : '', left + 497, topDestinatario + 181, {
+            this.doc.fontSize(8).text(this.ide.dhSaiEnt ? dataHoraDoXml(this.ide.dhSaiEnt, 'hora') : '', left + 497, topDestinatario + 181, {
                 characterSpacing: 1,
             });
         }
