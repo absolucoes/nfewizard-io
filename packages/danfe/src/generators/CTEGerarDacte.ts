@@ -43,7 +43,7 @@ import {
     RemCTe,
     VPrest,
 } from '@nfewizard/types/cte';
-import { format, parseISO } from 'date-fns';
+import { dataHoraDoXml } from './utils/dataHoraDoXml.js';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { ValidaCPFCNPJ } from '@nfewizard/shared';
@@ -287,11 +287,8 @@ class CTeGerarDacte {
         if (!value) {
             return '';
         }
-        try {
-            return format(parseISO(String(value)), mask);
-        } catch {
-            return String(value);
-        }
+        // Os dígitos do XML, não o fuso do processo (brief fiscal/45): a máscara com HH imprime data e hora.
+        return dataHoraDoXml(value, mask.includes('HH') ? 'dataHora' : 'data');
     }
 
     /**

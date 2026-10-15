@@ -3,6 +3,7 @@ import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { parseStringPromise } from 'xml2js';
+import { dataHoraDoXml } from './utils/dataHoraDoXml.js';
 
 type NodeXml = Record<string, any>;
 /**
@@ -29,8 +30,8 @@ function value(node: NodeXml | undefined, key: string): string {
 }
 function list<T>(v: T | T[] | undefined): T[] { return v === undefined ? [] : Array.isArray(v) ? v : [v]; }
 function formatDate(value: string): string {
-    const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2})(?::([0-9]{2}))?/.exec(value);
-    return m ? m[3] + '/' + m[2] + '/' + m[1] + ' ' + m[4] + ':' + m[5] + ':' + (m[6] || '00') : value;
+    // Os dígitos do XML, como no DANFE e no DACTE (brief fiscal/45).
+    return dataHoraDoXml(value, 'dataHora');
 }
 function field(doc: InstanceType<typeof PDFDocument>, x: number, y: number, w: number, h: number, label: string, content: string, align: 'left' | 'center' | 'right' = 'left') {
     doc.rect(x, y, w, h).stroke();
@@ -107,7 +108,7 @@ function header(doc: InstanceType<typeof PDFDocument>, emit: NodeXml, ide: NodeX
     const bw = 90 * MM, bh = 30 * MM;
     doc.image(bar, x + (w - bw) / 2, 145, { fit: [bw, bh], align: 'center', valign: 'center' });
     doc.font('Helvetica').fontSize(7).text(key.replace(/(.{4})/g, '$1 ').trim(), x, 233, { width: w, align: 'center', characterSpacing: 0.3 });
-    const auth = value(prot, 'nProt') ? 'Protocolo de autorização: ' + value(prot, 'nProt') + '  Recebido em: ' + value(prot, 'dhRecbto') : 'EMISSÃO EM CONTINGÊNCIA';
+    const auth = value(prot, 'nProt') ? 'Protocolo de autorização: ' + value(prot, 'nProt') + '  Recebido em: ' + formatDate(value(prot, 'dhRecbto')) : 'EMISSÃO EM CONTINGÊNCIA';
     doc.font('Helvetica-Bold').fontSize(8).text(auth, x, 247, { width: w, align: 'center' });
     // A faixa que o chamador passa substitui o texto padrão; como no DANFE e no DACTE, só sai em homologação (tpAmb 2).
     if (tpAmb === '2') doc.font('Helvetica-Bold').fontSize(10).text(faixaAmbiente || FAIXA_HOMOLOGACAO_PADRAO, x, 263, { width: w, align: 'center' });
