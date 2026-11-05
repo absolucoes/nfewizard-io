@@ -15,7 +15,7 @@ Regra: correção sem teste que falhe sem ela não entra aqui.
 
 | Pacote | Correção e motivo | Teste que a prova | Sem a correção | Upstream |
 | --- | --- | --- | --- | --- |
-| shared | XSD da NF-e aceita `tpNFCredito` 04 a 06 e CNPJ alfanumérico na chave e nos tipos; o XSD publicado recusava ambos | `packages/shared/src/utils/__tests__/SchemaNFeAlfanumerico.test.ts` | 3 de 6 testes falham | - |
+| shared | XSD da NF-e aceita `tpNFCredito` 04 a 06 e CNPJ alfanumérico na chave e nos tipos; o XSD publicado recusava ambos | `packages/shared/src/utils/__tests__/SchemaNFeAlfanumerico.test.ts` | 3 de 6 testes falham (até o `-vanir.8`) | **incorporado**: desde a sincronização de 05/11/2026 os XSD da NF-e são os do PL_010f v1.04 do upstream (PR nfewizard-org#135), que já trazem as duas coisas; o teste fica como guarda |
 | danfe | `logo` (Buffer) opcional no DANFE e no DACTE, com o texto do emitente deslocado | `packages/danfe/src/generators/identidadeVisual.test.ts` (logo, NF-e e CT-e) | os testes de logo falham (5 de 7 do arquivo falham no conjunto) | - |
 | danfe | `faixaAmbiente` opcional troca o texto de homologação; sem ela o texto original permanece | idem (faixa, NF-e e CT-e) | idem | - |
 | danfe | DANFE de item autorizado sem grupo de ICMS (serviço) caía com `TypeError` | idem (`gera o DANFE de um item autorizado sem grupo de ICMS`) | TypeError | - |
