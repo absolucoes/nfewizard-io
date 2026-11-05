@@ -202,10 +202,30 @@ export class NFeWizard implements NFeWizardImpl {
 
     /**
      * Retransmite uma NFe emitida em contingência para obtenção de autorização.
-     * Aceita apenas tpEmis 4 (EPEC) e 5 (FS-DA).
+     * Aceita apenas tpEmis 4 (EPEC), 5 (FS-DA) e 9 (Off-line, com tpImp 6).
      */
     async NFE_TransmitirContingencia(data: NFe | string) {
         return await this.nfeWizardService.NFE_TransmitirContingencia(data);
+    }
+
+    /**
+     * Monta e assina o XML da NFe sem transmitir à SEFAZ.
+     *
+     * Usa a mesma montagem do `NFE_Autorizacao` (chave de acesso, cDV, hashCSRT,
+     * nItem, CPF/CNPJ e assinatura), mas não valida o schema, não chama o
+     * webservice e não grava arquivos. Serve para prévia do DANFE, validação com
+     * `NFE_SchemaValidate`, gravação do XML antes do envio e contingência.
+     *
+     * Para transmitir depois, passe o `xmlEnviNFe` retornado para `NFE_Autorizacao`
+     * ou `NFE_TransmitirContingencia`: a chave de acesso é preservada.
+     *
+     * @param data Mesmo contrato de `NFE_Autorizacao`: dados da NFe em JSON do
+     * padrão da lib (`NFe`) ou um XML de envio (`enviNFe` / `NFe` solo) em string.
+     * @returns `xmlEnviNFe` com o envelope completo e `nfes` com a chave de acesso
+     * (`chNFe`) e o XML assinado (`xmlAssinado`) de cada NF-e do lote.
+     */
+    async NFE_GerarXml(data: NFe | string) {
+        return await this.nfeWizardService.NFE_GerarXml(data);
     }
 
     /**
