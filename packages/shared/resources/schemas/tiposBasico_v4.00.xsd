@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSpy v2025 rel. 2 (x64) (https://www.altova.com) by PROCERGS (Procergs - Centro de Tecnologia da Informação e Comunicação do Estado do Rio Grande do Sul S.A.) -->
 <!-- PL_008  - 30/07/2013- NT 2013/005 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:nfe="http://www.portalfiscal.inf.br/nfe" targetNamespace="http://www.portalfiscal.inf.br/nfe" elementFormDefault="qualified" attributeFormDefault="unqualified">
 	<xs:simpleType name="TCodUfIBGE">
@@ -97,7 +98,7 @@
 	</xs:simpleType>
 	<xs:simpleType name="TCnpjVar">
 		<xs:annotation>
-			<xs:documentation>Tipo Número do CNPJ tmanho varíavel (3-14)</xs:documentation>
+			<xs:documentation>Tipo Número do CNPJ</xs:documentation>
 		</xs:annotation>
 		<xs:restriction base="xs:string">
 			<xs:whiteSpace value="preserve"/>
@@ -595,4 +596,13 @@
 			<xs:enumeration value="92"/>
 		</xs:restriction>
 	</xs:simpleType>
+	<xs:complexType name="TRSAKeyValueType">
+		<xs:annotation>
+			<xs:documentation>Tipo que representa uma chave publica padrão RSA</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Modulus" type="xs:base64Binary"/>
+			<xs:element name="Exponent" type="xs:base64Binary"/>
+		</xs:sequence>
+	</xs:complexType>
 </xs:schema>
