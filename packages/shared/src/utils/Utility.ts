@@ -722,6 +722,9 @@ class Utility {
                 return `CTeDistribuicaoDFe-${tipo}`
 
             default:
+                // Todo serviço (CT-e, GTV-e, MDF-e...) grava o log pelo próprio nome do método. Lançar aqui,
+                // dentro do finally de salvaConsulta/salvaRetorno, escondia a resposta real da SEFAZ.
+                if (/^[A-Za-z0-9]+$/.test(metodo)) return `${metodo}-${tipo}`
                 throw new Error('Erro: Requisição de nome para método não implementado.')
         }
     }
