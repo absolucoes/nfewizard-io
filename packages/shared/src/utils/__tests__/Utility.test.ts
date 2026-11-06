@@ -108,3 +108,19 @@ describe('Utility - Autorização com alerta (NT 2026.002)', () => {
         expect(u.getAlertas({ cStat: '100' })).toEqual([]);
     });
 });
+
+describe('Utility - nome do log de consulta/retorno', () => {
+    // Sem nome de log o finally de salvaConsulta/salvaRetorno lançava e escondia a resposta da SEFAZ:
+    // o CT-e autorizado aparecia no Vanir como "Requisição de nome para método não implementado".
+    it.each([
+        'CTeAutorizacao', 'CTeAutorizacaoOS', 'CTeGTVeAutorizacao', 'CTeSimplificadoAutorizacao',
+        'CTeConsultaProtocolo', 'CTeRecepcaoEvento', 'CTeStatusServico', 'CTeDistribuicaoDFe', 'NFEAutorizacao',
+    ])('%s grava o log pelo nome do método', (metodo) => {
+        const nome = (utility('GO') as any).getRequestLogFileName(metodo, 'consulta');
+        expect(nome).toMatch(new RegExp(`^${metodo.replace('NFE', 'NFE')}-consulta$`));
+    });
+
+    it('rejeita nome de método com caminho ou símbolo', () => {
+        expect(() => (utility('GO') as any).getRequestLogFileName('../x', 'consulta')).toThrow();
+    });
+});
