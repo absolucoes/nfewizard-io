@@ -297,16 +297,26 @@ export class CTEAutorizacaoService extends BaseNFE implements CTEAutorizacaoServ
         return this.xmlBuilder.assinarXML(cteXML, 'infCte');
     }
 
+    /** CT-e 4.00 é SOAP 1.2 em todo autorizador; a regra por UF do `BaseNFE` é da NF-e. */
+    protected setContentType(): 'application/soap+xml' {
+        return 'application/soap+xml';
+    }
+
     protected async callWebService(xmlConsulta: string, webServiceUrl: string, ContentType: string, action: string, agent: any): Promise<AxiosResponse<any, any>> {
+        // Sem a `action` no Content-Type, a SVRS não acha a operação e responde
+        // "Requisição de nome para método não implementado".
+        const headers = this.buildHeaders(ContentType, action);
+
         logger.http('Iniciando comunicação com o webservice', {
             context: 'CTEAutorizacaoService',
             method: this.metodo,
             url: webServiceUrl,
             action,
+            headers,
         });
 
         const response = await this.axios.post(webServiceUrl, xmlConsulta, {
-            headers: { 'Content-Type': ContentType },
+            headers,
             httpsAgent: agent,
         });
 

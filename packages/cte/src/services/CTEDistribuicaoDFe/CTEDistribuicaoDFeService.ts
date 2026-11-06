@@ -30,6 +30,11 @@ class CTEDistribuicaoDFeService extends BaseNFE {
         return this.gerarXmlCTeDistribuicaoDFe(data);
     }
 
+    /** CT-e 4.00 é SOAP 1.2 em todo autorizador; a regra por UF do `BaseNFE` é da NF-e. */
+    protected setContentType(): 'application/soap+xml' {
+        return 'application/soap+xml';
+    }
+
     gerarXmlCTeDistribuicaoDFe(data: ConsultaNFe) {
         logger.info('Montando estrutura do XML em JSON', {
             context: 'CTEDistribuicaoDFeService',
@@ -52,9 +57,7 @@ class CTEDistribuicaoDFeService extends BaseNFE {
     protected async callWebService(xmlConsulta: string, webServiceUrl: string, ContentType: string, action: string, agent: Agent): Promise<AxiosResponse<any, any>> {
         const startTime = Date.now();
 
-        const headers = {
-            'Content-Type': ContentType,
-        };
+        const headers = this.buildHeaders(ContentType, action);
 
         logger.http('Iniciando comunicação com o webservice', {
             context: `CTEDistribuicaoDFeService`,

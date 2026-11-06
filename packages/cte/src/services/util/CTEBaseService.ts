@@ -40,6 +40,11 @@ abstract class CTEBaseService extends BaseNFE {
         return 'CTe';
     }
 
+    /** CT-e 4.00 é SOAP 1.2 em todo autorizador; a regra por UF do `BaseNFE` é da NF-e. */
+    protected setContentType(): 'application/soap+xml' {
+        return 'application/soap+xml';
+    }
+
     async Exec(data?: any): Promise<any> {
         let xmlConsulta = '';
         let xmlConsultaSoap = '';
