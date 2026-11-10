@@ -28,6 +28,17 @@ export { getCodIBGE } from './getCodIBGE.js';
 export { getDesTipoPag } from './getDesTipoPag.js';
 export { ehModeloSvc, modeloSvcPorTpEmis, modeloSvcPorChave, modeloPorAutorizadora } from './svc.js';
 export type { ModeloSvc, AutorizadoraNFe } from './svc.js';
+export {
+    TP_EVENTO_ECONF,
+    TP_EVENTO_ECONF_CANCELAMENTO,
+    ORGAO_ECONF_NFE,
+    MAX_EVENTOS_POR_LOTE,
+    ehEventoEconf,
+    nomeDoEventoEconf,
+    descEventoEconf,
+    schemaDoLoteEconf,
+    validarTamanhoDoLote,
+} from './econf.js';
 export { mountICMS, mountPIS, mountCOFINS } from './NFEImposto.js';
 export { NFE_SchemaValidate } from './validateSchema.js';
 export type {

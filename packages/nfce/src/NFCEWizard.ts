@@ -16,7 +16,7 @@
  */
 
 import { NFeWizardProps } from '@nfewizard/types/shared';
-import { Cancelamento, CancelamentoPorSubstituicao } from '@nfewizard/types/nfe';
+import { Cancelamento, CancelamentoPorSubstituicao, ConciliacaoFinanceira, CancelamentoConciliacaoFinanceira } from '@nfewizard/types/nfe';
 import { Environment, Utility, XmlBuilder, GerarConsulta, SaveFiles, logger } from '@nfewizard/shared';
 import { AxiosInstance } from 'axios';
 import { NFCEAutorizacaoService } from './services/NFCEAutorizacao/NFCEAutorizacaoService.js';
@@ -234,6 +234,49 @@ export class NFCEWizard {
             logger.error(``, error, { context: 'NFCE_CancelamentoPorSubstituicao' });
             throw new Error(`NFCE_CancelamentoPorSubstituicao: ${error.message}`);
         }
+    }
+
+    /** Envia um lote de eventos da NFC-e pelo serviço de recepção de evento da UF. */
+    private async enviarEventoNfce(nome: string, tpEvento: '110750' | '110751', lote: { idLote: number; evento: any[] }): Promise<any> {
+        try {
+            const eventoComModelo: any = {
+                idLote: lote.idLote,
+                modelo: '65',
+                evento: lote.evento.map((e) => ({ ...e, tpEvento })),
+            };
+
+            const servico = new NFCECancelamentoService(
+                this.environment,
+                this.utility,
+                this.xmlBuilder,
+                this.axios,
+                this.saveFiles,
+                this.gerarConsulta
+            );
+            const response = await new NFCECancelamento(servico).Exec(eventoComModelo);
+
+            console.log(`Retorno ${nome}`);
+            console.table(semChaveDeAcesso(response.xMotivos));
+            console.log('===================================');
+
+            return response;
+        } catch (error: any) {
+            logger.error(``, error, { context: nome });
+            throw new Error(`${nome}: ${error.message}`);
+        }
+    }
+
+    /**
+     * Conciliação financeira (ECONF, evento 110750), NT 2024.002: informa à SEFAZ como a NFC-e foi paga.
+     * Vai ao autorizador da UF. A lib preenche `tpEvento` e `descEvento` e valida o lote contra o XSD do ECONF.
+     */
+    async NFCE_ConciliacaoFinanceira(evento: ConciliacaoFinanceira): Promise<any> {
+        return this.enviarEventoNfce('NFCE_ConciliacaoFinanceira', '110750', evento);
+    }
+
+    /** Cancelamento da conciliação financeira (evento 110751) da NFC-e. */
+    async NFCE_CancelamentoConciliacaoFinanceira(evento: CancelamentoConciliacaoFinanceira): Promise<any> {
+        return this.enviarEventoNfce('NFCE_CancelamentoConciliacaoFinanceira', '110751', evento);
     }
 
     /**
