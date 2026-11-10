@@ -33,6 +33,8 @@ export type SchemaValidateMethod =
     | 'NFEConsultaProtocolo'
     | 'RecepcaoEvento'
     | 'NFEEventoCancSubst'
+    | 'NFEEventoEConf'
+    | 'NFEEventoCancEConf'
     | 'NFeDistribuicaoDFe'
     | 'NFEAutorizacao'
     | 'NFeAutorizacao'

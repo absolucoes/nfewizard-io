@@ -42,6 +42,10 @@ export const getSchema = (metodo: string) => {
     NFeAutorizacao: `${pathSchemas}/enviNFe_v4.00.xsd`,
     // Cancelamento por substituição (110112), NFC-e: o envEvento genérico não valida o detEvento deste evento
     NFEEventoCancSubst: `${pathSchemas}/envEventoCancSubst_v1.00.xsd`,
+    // Conciliação Financeira (ECONF, 110750) e seu cancelamento (110751): o envEvento genérico não olha dentro do
+    // detEvento (xs:any skip), e cada evento tem o seu pacote de XSD (NT 2024.002, pasta econf/)
+    NFEEventoEConf: `${pathSchemas}/econf/envEventoEConf_v1.00.xsd`,
+    NFEEventoCancEConf: `${pathSchemas}/econf/envEventoCancEConf_v1.00.xsd`,
     NFEInutilizacao: `${pathSchemas}/inutNFe_v4.00.xsd`,
     NFERetAutorizacao: `${pathSchemas}/consReciNFe_v4.00.xsd`,
     NfeConsultaCadastro: `${pathSchemas}/consCad_v2.00.xsd`,

@@ -15,7 +15,7 @@
  * along with NFeWizard-io. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export type TipoEvento = EventoCienciaDaOperacao | EventoCartaDeCorrecao | EventoCancelamento | EventoConfirmacaoDaOperacao | EventoEPEC | EventoOperacaoNaoRealizada | EventoDesconhecimentoDaOperacao
+export type TipoEvento = EventoCienciaDaOperacao | EventoCartaDeCorrecao | EventoCancelamento | EventoConfirmacaoDaOperacao | EventoEPEC | EventoOperacaoNaoRealizada | EventoDesconhecimentoDaOperacao | EventoConciliacaoFinanceira | EventoCancelamentoConciliacaoFinanceira
 
 export interface EventoNFe {
     /**
@@ -257,6 +257,91 @@ interface EventoCancelamento {
         chNFeRef?: string;
     };
 }
+/**
+ * Conciliação Financeira (ECONF, 110750), NT 2024.002: o emitente informa à SEFAZ como a nota foi paga
+ * (um `detPag` por forma de pagamento, no máximo 100). `descEvento` a lib preenche.
+ * NF-e (55) vai ao Ambiente Nacional (cOrgao 92, SVRS); NFC-e (65) vai ao autorizador da UF (`cOrgao`).
+ */
+export interface DetPagConciliacao {
+    /** 0 = à vista, 1 = a prazo. */
+    indPag?: 0 | 1;
+    /** Forma de pagamento, 2 dígitos (01 dinheiro ... 99 outros). */
+    tPag: string;
+    /** Descrição do meio de pagamento, 2 a 60 caracteres; só para `tPag` 99. */
+    xPag?: string;
+    /** Valor pago, até 13 inteiros e 2 decimais (ex.: "150.00"). */
+    vPag: string;
+    /** Data do pagamento, AAAA-MM-DD. */
+    dPag: string;
+    /** CNPJ do pagador; vem junto com `UFPag`. */
+    CNPJPag?: string;
+    /** UF do pagador; vem junto com `CNPJPag`. */
+    UFPag?: string;
+    /** CNPJ da instituição financeira/de pagamento; só com `CNPJPag` e `UFPag`. */
+    CNPJIF?: string;
+    /** Bandeira do cartão (tBand); só com `CNPJPag` e `UFPag`. */
+    tBand?: string;
+    /** Número de autorização da operação (cAut); só com `CNPJPag` e `UFPag`. */
+    cAut?: string;
+    /** CNPJ do recebedor; vem junto com `UFReceb`. */
+    CNPJReceb?: string;
+    /** UF do recebedor; vem junto com `CNPJReceb`. */
+    UFReceb?: string;
+}
+export interface EventoConciliacaoFinanceira {
+    /** Ambiente: 1 produção, 2 homologação. */
+    tpAmb: number;
+    /** Órgão de recepção: 92 (SVRS) para a NF-e; código IBGE da UF para a NFC-e. */
+    cOrgao: number;
+    CNPJ?: string;
+    CPF?: string;
+    /** Chave da nota à qual o evento será vinculado. */
+    chNFe: string;
+    dhEvento: string;
+    tpEvento: '110750';
+    /** Sequencial do evento, de 1 a 99. */
+    nSeqEvento: number;
+    verEvento: string;
+    detEvento: {
+        /** A lib preenche "ECONF". */
+        descEvento?: string;
+        /** Versão do aplicativo do autor do evento. */
+        verAplic: string;
+        /** De 1 a 100 grupos de pagamento. */
+        detPag: DetPagConciliacao[];
+    };
+}
+/** Cancelamento da conciliação financeira (110751): desfaz um ECONF já registrado. */
+export interface EventoCancelamentoConciliacaoFinanceira {
+    tpAmb: number;
+    cOrgao: number;
+    CNPJ?: string;
+    CPF?: string;
+    chNFe: string;
+    dhEvento: string;
+    tpEvento: '110751';
+    nSeqEvento: number;
+    verEvento: string;
+    detEvento: {
+        /** A lib preenche "Cancelamento Conciliação Financeira". */
+        descEvento?: string;
+        verAplic: string;
+        /** Protocolo (15 dígitos) do ECONF a cancelar. */
+        nProtEvento: string;
+    };
+}
+export interface ConciliacaoFinanceira {
+    idLote: number;
+    modelo?: '55' | '65';
+    /** Máximo de 20 eventos por lote. */
+    evento: EventoConciliacaoFinanceira[]
+}
+export interface CancelamentoConciliacaoFinanceira {
+    idLote: number;
+    modelo?: '55' | '65';
+    evento: EventoCancelamentoConciliacaoFinanceira[]
+}
+
 /**
  * Cancelamento por substituição (110112) da NFC-e: cancela a nota emitida em contingência off-line
  * que foi substituída por outra, já autorizada. `tpEvento`, `descEvento` e `tpAutor` a lib preenche.

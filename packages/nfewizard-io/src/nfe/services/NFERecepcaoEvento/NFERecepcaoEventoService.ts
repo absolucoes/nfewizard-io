@@ -15,7 +15,7 @@
  * along with NFeWizard-io. If not, see <https://www.gnu.org/licenses/>.
  */
 import { AxiosInstance, AxiosResponse } from 'axios';
-import { Environment, Utility, XmlBuilder, BaseNFE, modeloSvcPorChave } from '@nfewizard/shared';
+import { Environment, Utility, XmlBuilder, BaseNFE, modeloSvcPorChave, ehEventoEconf, nomeDoEventoEconf, descEventoEconf, NFE_SchemaValidate, schemaDoLoteEconf, validarTamanhoDoLote, ORGAO_ECONF_NFE } from '@nfewizard/shared';
 import { EventoNFe, GenericObject, TipoEvento } from '@nfewizard/types/nfe';
 import { GerarConsultaImpl, NFERecepcaoEventoServiceImpl, SaveFilesImpl } from '@nfewizard/types/shared';
 import { logger } from '@nfewizard/shared';
@@ -79,6 +79,8 @@ export class NFERecepcaoEventoService extends BaseNFE implements NFERecepcaoEven
      * Um lote regional não mistura notas da SVC com notas da autorizadora normal.
      */
     private getModeloRegional(evento: TipoEvento[]): string {
+        // ECONF (110750) e seu cancelamento (110751) da NF-e são recebidos pela SVRS (cOrgao 92), qualquer que seja a UF do emitente
+        if (this.modelo === 'NFe' && evento.some(e => ehEventoEconf(e.tpEvento))) return 'NFeSVRS';
         const svcs = new Set(evento.map(e => modeloSvcPorChave(e.chNFe) ?? ''));
         if (svcs.size > 1) {
             throw new Error('NFE_RecepcaoEvento: o lote mistura eventos de notas emitidas em SVC com eventos de notas da autorizadora normal.');
@@ -132,6 +134,9 @@ export class NFERecepcaoEventoService extends BaseNFE implements NFERecepcaoEven
                 return 'Cancelamento';
             case '110140':
                 return 'EPEC';
+            case '110750':
+            case '110751':
+                return nomeDoEventoEconf(tpEvento) as string;
             default:
                 return 'Desconhecido';
         }
@@ -171,7 +176,8 @@ export class NFERecepcaoEventoService extends BaseNFE implements NFERecepcaoEven
 
             const idEvento = this.getID(eventoProps);
             // const ambienteNacional = this.isAmbienteNacional(tpEvento);
-            const orgao = ambienteNacional ? 91 : cOrgao;
+            // ECONF da NF-e vai à SVRS (92); o da NFC-e vai ao autorizador da UF, como os demais eventos regionais
+            const orgao = ambienteNacional ? 91 : (this.modelo === 'NFe' && ehEventoEconf(tpEvento) ? ORGAO_ECONF_NFE : cOrgao);
 
             this.tpEvento = tpEvento;
 
@@ -197,7 +203,10 @@ export class NFERecepcaoEventoService extends BaseNFE implements NFERecepcaoEven
                         $: {
                             versao: "1.00",
                         },
-                        ...detEvento,
+                        // descEvento é enumeração fixa no XSD do ECONF; vem antes do resto por causa da sequência
+                        ...(ehEventoEconf(tpEvento)
+                            ? (({ descEvento: _ignorado, ...resto }: any) => ({ descEvento: descEventoEconf(tpEvento), ...resto }))(detEvento || {})
+                            : detEvento),
                     },
                 }
             }
@@ -298,6 +307,20 @@ export class NFERecepcaoEventoService extends BaseNFE implements NFERecepcaoEven
         return response;
     }
 
+    /**
+     * O envEvento genérico não valida o detEvento (xs:any skip). Para o ECONF (110750) e o cancelamento (110751),
+     * o lote é validado contra o XSD do evento, na pasta `econf` do pacote shared, antes de ir à SEFAZ.
+     */
+    private async validarLoteEconf(evento: TipoEvento[], xml: string) {
+        const schema = schemaDoLoteEconf(evento);
+        if (!schema) return;
+        try {
+            await NFE_SchemaValidate(xml, schema, { environment: this.environment });
+        } catch (error: any) {
+            throw new Error(`NFE_RecepcaoEvento: o XML do ${nomeDoEventoEconf(evento[0].tpEvento)} não passa no XSD. ${error?.message ?? error}`);
+        }
+    }
+
     protected async enviaEvento(evento: TipoEvento[], idLote: number, tipoAmbiente: number) {
         let xmlConsulta: string = '';
         let xmlConsultaSoap: string = '';
@@ -307,6 +330,8 @@ export class NFERecepcaoEventoService extends BaseNFE implements NFERecepcaoEven
         try {
             // Gerando XML para consulta de Status do Serviço
             xmlConsulta = this.gerarXmlRecepcaoEvento(evento, idLote, ambienteNacional);
+
+            await this.validarLoteEconf(evento, xmlConsulta);
 
             const { xmlFormated, agent, webServiceUrl, action } = await this.gerarConsulta.gerarConsulta(xmlConsulta, this.metodo, ambienteNacional || this.isAmbienteNacional(this.tpEvento), '', modelo);
 
@@ -325,6 +350,7 @@ export class NFERecepcaoEventoService extends BaseNFE implements NFERecepcaoEven
     async Exec(data: EventoNFe) {
 
             const { evento, idLote, modelo } = data;
+            validarTamanhoDoLote(evento);
             const { nacional, regional } = this.separaEventosPorAmbiente(evento);
 
             if (modelo === '65') this.modelo = 'NFCe';

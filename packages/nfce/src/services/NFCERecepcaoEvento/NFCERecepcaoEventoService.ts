@@ -15,7 +15,7 @@
  * along with NFeWizard-io. If not, see <https://www.gnu.org/licenses/>.
  */
 import { AxiosInstance, AxiosResponse } from 'axios';
-import { Environment, Utility, XmlBuilder, BaseNFE } from '@nfewizard/shared';
+import { Environment, Utility, XmlBuilder, BaseNFE, ehEventoEconf, nomeDoEventoEconf, descEventoEconf, NFE_SchemaValidate, schemaDoLoteEconf, validarTamanhoDoLote } from '@nfewizard/shared';
 import { EventoNFe, GenericObject, TipoEvento } from '@nfewizard/types/nfe';
 import { GerarConsultaImpl, NFERecepcaoEventoServiceImpl, SaveFilesImpl } from '@nfewizard/types/shared';
 import { logger } from '@nfewizard/shared';
@@ -43,6 +43,11 @@ export class NFCERecepcaoEventoService extends BaseNFE implements NFERecepcaoEve
      * campos é parte do leiaute e `descEvento`, sem acento, e `tpAutor` 1 são os únicos valores aceitos.
      */
     private montarDetEvento(tpEvento: string, detEvento: any, cOrgao: number) {
+        // ECONF e cancelamento do ECONF: descEvento é enumeração fixa no XSD e vem antes do resto, por causa da sequência
+        if (ehEventoEconf(tpEvento)) {
+            const { descEvento: _ignorado, ...resto } = detEvento || {};
+            return { descEvento: descEventoEconf(tpEvento), ...resto };
+        }
         if (tpEvento !== '110112') return detEvento;
 
         const { nProt, xJust, chNFeRef, verAplic, cOrgaoAutor } = detEvento || {};
@@ -124,6 +129,9 @@ export class NFCERecepcaoEventoService extends BaseNFE implements NFERecepcaoEve
                 return 'Cancelamento';
             case '110112':
                 return 'Cancelamento por Substituição';
+            case '110750':
+            case '110751':
+                return nomeDoEventoEconf(tpEvento) as string;
             default:
                 return 'Desconhecido';
         }
@@ -289,6 +297,20 @@ export class NFCERecepcaoEventoService extends BaseNFE implements NFERecepcaoEve
         return response;
     }
 
+    /**
+     * ECONF (110750) e cancelamento (110751): o envEvento genérico não valida o detEvento (xs:any skip), então o lote
+     * é validado contra o XSD do evento, na pasta `econf` do pacote shared, antes de ir ao autorizador da UF.
+     */
+    private async validarLoteEconf(evento: TipoEvento[], xml: string) {
+        const schema = schemaDoLoteEconf(evento);
+        if (!schema) return;
+        try {
+            await NFE_SchemaValidate(xml, schema, { environment: this.environment });
+        } catch (error: any) {
+            throw new Error(`NFCE_RecepcaoEvento: o XML do ${nomeDoEventoEconf(evento[0].tpEvento)} não passa no XSD. ${error?.message ?? error}`);
+        }
+    }
+
     protected async enviaEvento(evento: TipoEvento[], idLote: number, tipoAmbiente: number) {
         let xmlConsulta: string = '';
         let xmlConsultaSoap: string = '';
@@ -297,6 +319,8 @@ export class NFCERecepcaoEventoService extends BaseNFE implements NFERecepcaoEve
         try {
             // Gerando XML para evento NFCe
             xmlConsulta = this.gerarXmlRecepcaoEvento(evento, idLote, ambienteNacional);
+
+            await this.validarLoteEconf(evento, xmlConsulta);
 
             const { xmlFormated, agent, webServiceUrl, action } = await this.gerarConsulta.gerarConsulta(xmlConsulta, this.metodo, ambienteNacional || this.isAmbienteNacional(this.tpEvento), '', this.modelo);
 
@@ -317,6 +341,7 @@ export class NFCERecepcaoEventoService extends BaseNFE implements NFERecepcaoEve
      */
     async Exec(data: EventoNFe) {
         const { evento, idLote, modelo } = data;
+        validarTamanhoDoLote(evento);
         const { nacional, regional } = this.separaEventosPorAmbiente(evento);
 
         if (modelo === '65') this.modelo = 'NFCe';
