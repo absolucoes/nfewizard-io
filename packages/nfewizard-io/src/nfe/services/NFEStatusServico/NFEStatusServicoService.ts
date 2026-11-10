@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with NFeWizard-io. If not, see <https://www.gnu.org/licenses/>.
  */
-import { getCodIBGE, Environment, XmlBuilder, Utility, BaseNFE } from '@nfewizard/shared';
+import { getCodIBGE, Environment, XmlBuilder, Utility, BaseNFE, modeloPorAutorizadora } from '@nfewizard/shared';
 import { AxiosInstance } from 'axios';
 import { SaveFilesImpl, GerarConsultaImpl, NFEStatusServicoServiceImpl } from '@nfewizard/types/shared';
 import { logger } from '@nfewizard/shared';
@@ -44,6 +44,17 @@ export class NFEStatusServicoService extends BaseNFE implements NFEStatusServico
 
         return this.xmlBuilder.gerarXml(xmlObject, 'consStatServ', this.metodo)
 
+    }
+
+    /**
+     * Sem `autorizadora`, consulta a autorizadora normal da UF. Com 'SVC-AN', 'SVC-RS' ou 'SVRS', consulta a dela
+     * (o `cUF` do XML continua o da UF do emitente).
+     */
+    protected getModelo(data?: { autorizadora?: string }): string {
+        if (data && data.autorizadora) {
+            return modeloPorAutorizadora(data.autorizadora);
+        }
+        return super.getModelo(data);
     }
 }
 

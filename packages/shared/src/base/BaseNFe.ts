@@ -54,8 +54,13 @@ abstract class BaseNFE {
         throw new Error("O método 'gerarXml' não foi implementado na subclasse.");
     }
 
-    protected setContentType() {
+    protected setContentType(modelo: string | undefined = this.modelo) {
         const UF = this.environment.config.dfe.UF;
+
+        // SVC-AN e SVC-RS falam SOAP 1.2, qualquer que seja a UF do emitente.
+        if (modelo === 'NFeSVC-AN' || modelo === 'NFeSVC-RS') {
+            return 'application/soap+xml'
+        }
 
         const ufsAppSoad = ['MG', 'GO', 'MT', 'MS', 'AM', 'DF', 'RS'];
 
@@ -132,13 +137,14 @@ abstract class BaseNFE {
         let webServiceUrlTmp: string = '';
         let responseInJson: GenericObject | undefined = undefined;
         let xmlRetorno: AxiosResponse<any, any> = {} as AxiosResponse<any, any>;
-        const ContentType = this.setContentType();
+        let ContentType = this.setContentType();
 
         try {
             // Gerando XML específico
             xmlConsulta = this.gerarXml(data);
 
             const modelo = this.getModelo(data);
+            ContentType = this.setContentType(modelo);
 
             const { xmlFormated, agent, webServiceUrl, action } = await this.gerarConsulta.gerarConsulta(xmlConsulta, this.metodo, undefined, undefined, modelo);
 

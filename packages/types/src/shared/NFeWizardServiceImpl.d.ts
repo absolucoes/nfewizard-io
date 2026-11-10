@@ -5,7 +5,7 @@ export interface NFeWizardServiceImpl {
     NFE_LoadEnvironment({ config }: {
         config: NFeWizardProps;
     }): Promise<void>;
-    NFE_ConsultaStatusServico(): Promise<any>;
+    NFE_ConsultaStatusServico(opcoes?: { autorizadora?: 'SVC-AN' | 'SVC-RS' | 'SVRS' }): Promise<any>;
     NFE_ConsultaProtocolo(chave: string): Promise<any>;
     NFE_RecepcaoEvento(evento: EventoNFe): Promise<GenericObject[]>;
     NFE_EventoPrevioDeEmissaoEmContingencia(evento: EPEC): Promise<GenericObject[]>;

@@ -17,7 +17,7 @@
 import { Environment } from '@nfewizard/shared';
 import { Utility } from '@nfewizard/shared';
 import { XmlBuilder } from '@nfewizard/shared';
-import { BaseNFE } from '@nfewizard/shared';
+import { BaseNFE, modeloSvcPorChave } from '@nfewizard/shared';
 import { AxiosInstance } from 'axios';
 import { GerarConsultaImpl, SaveFilesImpl, NFEconsultaProtocoloServiceImpl } from '@nfewizard/types/shared';
 import { logger } from '@nfewizard/shared';
@@ -44,6 +44,11 @@ export class NFEconsultaProtocoloService extends BaseNFE implements NFEconsultaP
         }
 
         return this.xmlBuilder.gerarXml(xmlObject, 'consSitNFe', this.metodo);
+    }
+
+    /** Nota emitida em SVC (tpEmis 6 ou 7 na chave) é consultada na SVC que a autorizou. */
+    protected getModelo(chave?: string): string {
+        return modeloSvcPorChave(chave) ?? super.getModelo(chave);
     }
 }
 

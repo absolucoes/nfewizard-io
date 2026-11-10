@@ -139,12 +139,12 @@ class NFeWizardService implements NFeWizardServiceImpl {
     /**
      * Status Serviço
      */
-    async NFE_ConsultaStatusServico() {
+    async NFE_ConsultaStatusServico(opcoes?: { autorizadora?: 'SVC-AN' | 'SVC-RS' | 'SVRS' }) {
         try {
             const nfeStatusServicoService = new NFEStatusServicoService(this.environment, this.utility, this.xmlBuilder, this.axios, this.saveFiles, this.gerarConsulta);
             const nfeStatusServico = new NFEStatusServico(nfeStatusServicoService);
 
-            const response = await nfeStatusServico.Exec();
+            const response = await nfeStatusServico.Exec(opcoes);
 
             console.log('Retorno NFE_ConsultaStatusServico');
             console.log(`   ${response.xMotivo}`);

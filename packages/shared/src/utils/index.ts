@@ -26,6 +26,8 @@ export { XmlParser } from './XmlParser.js';
 export { ValidaCPFCNPJ } from './ValidaCPFCNPJ.js';
 export { getCodIBGE } from './getCodIBGE.js';
 export { getDesTipoPag } from './getDesTipoPag.js';
+export { ehModeloSvc, modeloSvcPorTpEmis, modeloSvcPorChave, modeloPorAutorizadora } from './svc.js';
+export type { ModeloSvc, AutorizadoraNFe } from './svc.js';
 export { mountICMS, mountPIS, mountCOFINS } from './NFEImposto.js';
 export { NFE_SchemaValidate } from './validateSchema.js';
 export type {
