@@ -16,7 +16,7 @@
  */
 import { AxiosInstance, AxiosResponse } from 'axios';
 import { NFERetornoAutorizacao } from '../../operations/NFERetornoAutorizacao/NFERetornoAutorizacao.js';
-import { XmlParser, Environment, Utility, XmlBuilder, ValidaCPFCNPJ, BaseNFE, mountCOFINS, mountICMS, mountPIS } from '@nfewizard/shared';
+import { XmlParser, Environment, Utility, XmlBuilder, ValidaCPFCNPJ, BaseNFE, mountCOFINS, mountICMS, mountPIS, modeloSvcPorTpEmis } from '@nfewizard/shared';
 import { GenericObject, LayoutNFe, NFe, NFeGerarXmlResponse, ProtNFe } from '@nfewizard/types/nfe';
 import { format } from 'date-fns';
 import { GerarConsultaImpl, NFEAutorizacaoServiceImpl, SaveFilesImpl } from '@nfewizard/types/shared';
@@ -70,6 +70,13 @@ export class NFEAutorizacaoService extends BaseNFE implements NFEAutorizacaoServ
 
     protected getModelo(data: NFe): string {
         const notas = Array.isArray(data.NFe) ? data.NFe : [data.NFe];
+        // tpEmis 6 (SVC-AN) ou 7 (SVC-RS): o lote vai à SVC. Um lote não mistura autorizadoras.
+        const svcs = new Set(notas.map(nota => modeloSvcPorTpEmis(nota.infNFe.ide.tpEmis) ?? ''));
+        if (svcs.size > 1) {
+            throw new Error('NFE_Autorizacao: o lote mistura notas em contingência SVC (tpEmis 6 ou 7) com notas de outra forma de emissão.');
+        }
+        const [svc] = [...svcs];
+        if (svc) return svc;
         return notas.some(nota => !nota.infNFe.emit.IE) ? 'NFeSVRS' : super.getModelo(data);
     }
 
@@ -552,8 +559,8 @@ export class NFEAutorizacaoService extends BaseNFE implements NFEAutorizacaoServ
         let xmlConsultaSoap: string = '';
         let responseInJson: GenericObject | undefined = undefined;
         let xmlRetorno: AxiosResponse<any, any> = {} as AxiosResponse<any, any>;
-        const ContentType = this.setContentType();
         const modelo = this.getModelo(dataAsJson);
+        const ContentType = this.setContentType(modelo);
         const notas = Array.isArray(dataAsJson.NFe) ? dataAsJson.NFe : [dataAsJson.NFe];
 
         try {

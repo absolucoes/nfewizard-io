@@ -15,7 +15,7 @@
  * along with NFeWizard-io. If not, see <https://www.gnu.org/licenses/>.
  */
 import { AxiosInstance, AxiosResponse } from 'axios';
-import { Environment, Utility, XmlBuilder, BaseNFE } from '@nfewizard/shared';
+import { Environment, Utility, XmlBuilder, BaseNFE, modeloSvcPorChave } from '@nfewizard/shared';
 import { EventoNFe, GenericObject, TipoEvento } from '@nfewizard/types/nfe';
 import { GerarConsultaImpl, NFERecepcaoEventoServiceImpl, SaveFilesImpl } from '@nfewizard/types/shared';
 import { logger } from '@nfewizard/shared';
@@ -72,6 +72,19 @@ export class NFERecepcaoEventoService extends BaseNFE implements NFERecepcaoEven
         }
 
         return id; // Retorna o ID validado
+    }
+
+    /**
+     * Evento regional de nota emitida em SVC (tpEmis 6 ou 7 na chave) vai à SVC que a autorizou.
+     * Um lote regional não mistura notas da SVC com notas da autorizadora normal.
+     */
+    private getModeloRegional(evento: TipoEvento[]): string {
+        const svcs = new Set(evento.map(e => modeloSvcPorChave(e.chNFe) ?? ''));
+        if (svcs.size > 1) {
+            throw new Error('NFE_RecepcaoEvento: o lote mistura eventos de notas emitidas em SVC com eventos de notas da autorizadora normal.');
+        }
+        const [svc] = [...svcs];
+        return svc || this.getModelo();
     }
 
     protected getModelo(): string {
@@ -288,13 +301,14 @@ export class NFERecepcaoEventoService extends BaseNFE implements NFERecepcaoEven
     protected async enviaEvento(evento: TipoEvento[], idLote: number, tipoAmbiente: number) {
         let xmlConsulta: string = '';
         let xmlConsultaSoap: string = '';
-        const ContentType = this.setContentType();
         const ambienteNacional = tipoAmbiente === 0 ? true : false;
+        const modelo = ambienteNacional ? this.getModelo() : this.getModeloRegional(evento);
+        const ContentType = this.setContentType(modelo);
         try {
             // Gerando XML para consulta de Status do Serviço
             xmlConsulta = this.gerarXmlRecepcaoEvento(evento, idLote, ambienteNacional);
 
-            const { xmlFormated, agent, webServiceUrl, action } = await this.gerarConsulta.gerarConsulta(xmlConsulta, this.metodo, ambienteNacional || this.isAmbienteNacional(this.tpEvento), '', this.getModelo());
+            const { xmlFormated, agent, webServiceUrl, action } = await this.gerarConsulta.gerarConsulta(xmlConsulta, this.metodo, ambienteNacional || this.isAmbienteNacional(this.tpEvento), '', modelo);
 
             xmlConsultaSoap = xmlFormated;
 

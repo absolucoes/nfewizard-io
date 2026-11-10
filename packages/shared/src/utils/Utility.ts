@@ -374,6 +374,12 @@ class Utility {
             return { chaveMae: `NFe_${ambienteNacional ? 'AN' : 'SVRS'}_${ambiente}`, chaveFilha: `${metodo}_${versaoDF}` };
         }
 
+        // Contingência SVC (tpEmis 6 ou 7): o webservice é o da SVC; evento nacional continua no AN.
+        if (mod === 'NFeSVC-AN' || mod === 'NFeSVC-RS') {
+            const svc = mod === 'NFeSVC-AN' ? 'SVC-AN' : 'SVC-RS';
+            return { chaveMae: `NFe_${ambienteNacional ? 'AN' : svc}_${ambiente}`, chaveFilha: `${metodo}_${versaoDF}` };
+        }
+
         if (ambienteNacional) {
             const chaveMae = `${mod}_AN_${ambiente}`;
             const chaveFilha = `${metodo}_${versaoDF}`;

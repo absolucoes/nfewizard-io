@@ -85,7 +85,7 @@ export interface SchemaValidationResult {
 
 export interface NFeWizardImpl {
     NFE_LoadEnvironment({ config }: { config: NFeWizardProps }): Promise<void>;
-    NFE_ConsultaStatusServico(): Promise<any>;
+    NFE_ConsultaStatusServico(opcoes?: { autorizadora?: 'SVC-AN' | 'SVC-RS' | 'SVRS' }): Promise<any>;
     NFE_ConsultaProtocolo(chave: string): Promise<any>;
     NFE_ConsultaCadastro(data: ConsultaCadastroData): Promise<ConsultaCadastroResponse>;
     NFE_RecepcaoEvento(evento: EventoNFe): Promise<GenericObject[]>;

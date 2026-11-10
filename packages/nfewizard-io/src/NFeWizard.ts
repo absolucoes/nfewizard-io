@@ -49,8 +49,8 @@ export class NFeWizard implements NFeWizardImpl {
     /**
      * Status Serviço
      */
-    async NFE_ConsultaStatusServico() {
-        return await this.nfeWizardService.NFE_ConsultaStatusServico();
+    async NFE_ConsultaStatusServico(opcoes?: { autorizadora?: 'SVC-AN' | 'SVC-RS' | 'SVRS' }) {
+        return await this.nfeWizardService.NFE_ConsultaStatusServico(opcoes);
     }
 
     /**
