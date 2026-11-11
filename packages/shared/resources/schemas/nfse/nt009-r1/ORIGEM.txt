@@ -1,0 +1,12 @@
+XSD da NT 009 SE/CGNFS-e, release 1 (leiaute do DPS e da NFS-e com IBS/CBS reestruturado).
+
+Origem: Portal da NFS-e (gov.br/nfse), documentacao tecnica, pacote de esquemas de
+producao restrita (esquemas.zip), arquivo de 20/10/2026.
+SHA-256 do esquemas.zip: 25fdcecc651a67a216496ab10d7566631e6ed10f721e37d62c7845dadb0ea267
+
+Arquivos copiados sem alteracao: DPS_v1.01.xsd, NFSe_v1.01.xsd, tiposComplexos_v1.01.xsd,
+tiposSimples_v1.01.xsd, xmldsig-core-schema.xsd. Os nomes oficiais seguem com o sufixo
+_v1.01 (e TVerNFSe aceita so 1.00 e 1.01), por isso a pasta propria: os arquivos tem os
+mesmos nomes dos do leiaute 1.01 vigente, que ficam um nivel acima.
+
+Somente o release 1 tem XSD publicado. Releases 2 e 3 da NT 009 nao estao aqui.

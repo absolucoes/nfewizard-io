@@ -18,6 +18,11 @@
 import { NFeWizardProps } from '../shared/NFeWizardProps.js';
 
 /**
+ * Leiautes de DPS que o montador sabe produzir (ver NFSeConfig.nfse.leiaute).
+ */
+export type LeiauteDPS = '1.01' | 'nt009-r1';
+
+/**
  * Configuração para NFSeWizard.
  * Herda toda a estrutura de NFeWizardProps (dfe, email, lib), exceto o bloco
  * de parametrização do documento fiscal: aqui a chave é "nfse" (em vez de
@@ -38,5 +43,14 @@ export type NFSeConfig = Omit<NFeWizardProps, 'nfe'> & {
          * @param {string} versao - Versão do aplicativo emissor (verAplic)
          */
         versao?: string;
+        /**
+         * @param {string} leiaute - Leiaute do DPS que a lib monta e assina:
+         * '1.01'      = leiaute vigente (padrão, se omitido);
+         * 'nt009-r1'  = leiaute da NT 009 SE/CGNFS-e, release 1 (XSD de homologação
+         *               restrita), com finNFSe em infDPS e IBSCBS reestruturado.
+         * Os dois nunca se misturam: DPS no formato de um leiaute entregue à lib
+         * configurada para o outro é recusado, em vez de gerar XML que a SEFIN rejeita.
+         */
+        leiaute?: LeiauteDPS;
     };
 };
