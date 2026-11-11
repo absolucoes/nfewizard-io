@@ -106,7 +106,59 @@ export type InfDPS = {
      * Informações de IBS/CBS declaradas pelo emitente (opcional - obrigatório
      * a partir da competência de corte da reforma tributária)
      */
-    IBSCBS?: InfoIBSCBS;
+    IBSCBS?: InfoIBSCBS | InfoIBSCBSNT009;
+    /**
+     * Finalidade de emissão da NFS-e, SOMENTE no leiaute NT 009 (nfse.leiaute =
+     * 'nt009-r1'), onde sai do grupo IBSCBS e passa a ser filho direto de infDPS
+     * e obrigatório: 0 - NFS-e regular; 1 - NFS-e de crédito; 2 - NFS-e de débito.
+     * No leiaute 1.01 este campo é recusado (lá finNFSe fica dentro de IBSCBS).
+     */
+    finNFSe?: 0 | 1 | 2;
+};
+
+/**
+ * Informações de IBS/CBS no leiaute da NT 009 (release 1): sem finNFSe (subiu
+ * para infDPS), cIndOp opcional, trib reestruturado e sem gReeRepRes.
+ * Só vale com nfse.leiaute = 'nt009-r1'.
+ */
+export type InfoIBSCBSNT009 = {
+    indFinal?: 0 | 1;
+    /**
+     * Código indicador da operação (6 dígitos). Opcional: só se informa quando a
+     * tabela CST/cClassTrib (ind_gIBSCBS) o pede - regra de negócio, não de XSD.
+     */
+    cIndOp?: string;
+    tpOper?: 1 | 2 | 3 | 4 | 5;
+    gRefNFSe?: { refNFSe: string[] };
+    tpEnteGov?: 1 | 2 | 3 | 4;
+    indDest: 0 | 1;
+    dest?: InfoDestIBSCBS;
+    /**
+     * Bem imóvel reestruturado na NT 009 (cMun, gLocacao, gUnidImob): repassado
+     * como veio, na ordem do XSD, sem normalização da lib.
+     */
+    imovel?: Record<string, any>;
+    /**
+     * Bens móveis (NCM), de 1 a 1000 ocorrências: repassado como veio.
+     */
+    bensMoveis?: Array<{ cNCMBemMovel: string; xNCMBemMovel: string; qtdNCMBemMovel: string | number }>;
+    valores: {
+        trib: InfoTributosIBSCBSNT009;
+    };
+};
+
+/**
+ * Tributação do IBS/CBS na NT 009: CST e cClassTrib no nível de trib e gIBSCBS
+ * (opcional) só com crédito presumido, tributação regular e diferimento.
+ * O CST nunca é informado à parte: sai dos 3 primeiros dígitos do cClassTrib.
+ */
+export type InfoTributosIBSCBSNT009 = {
+    cClassTrib: string;
+    gIBSCBS?: {
+        cCredPres?: string;
+        gTribRegular?: { cClassTribReg: string };
+        gDif?: { pDifUF: number; pDifMun: number; pDifCBS: number };
+    };
 };
 
 /**

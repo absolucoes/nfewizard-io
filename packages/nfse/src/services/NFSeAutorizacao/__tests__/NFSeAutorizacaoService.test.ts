@@ -80,7 +80,7 @@ const buildRequest = (): NFSe => ({
   },
 });
 
-const buildEnvironment = () => ({
+const buildEnvironment = (leiaute?: string) => ({
   getConfig: () => ({
     dfe: {
       armazenarXMLConsulta: true,
@@ -95,13 +95,14 @@ const buildEnvironment = () => ({
     },
     nfse: {
       ambiente: 2,
+      ...(leiaute ? { leiaute } : {}),
     },
   }),
   getHttpAgent: () => ({})
 });
 
-const buildService = (axiosPost: jest.Mock) => {
-  const environment = buildEnvironment() as any;
+const buildService = (axiosPost: jest.Mock, leiaute?: string) => {
+  const environment = buildEnvironment(leiaute) as any;
   const utility = {
     getWebServiceUrlNFSe: jest.fn().mockReturnValue('https://nfse.test/webservice'),
     salvaJSON: jest.fn(),
@@ -385,5 +386,123 @@ describe('NFSeAutorizacaoService', () => {
         },
       })
     ).rejects.toThrow('IBSCBS.valores.gReeRepRes: cada documento precisa informar dFeNacional, docFiscalOutro ou docOutro.');
+  });
+});
+
+describe('NFSeAutorizacaoService - leiaute da NT 009 (nt009-r1)', () => {
+  const ok = () => jest.fn().mockResolvedValue({ data: { chaveAcesso: 'CHAVE-TESTE' } });
+
+  const ibscbsDaNt009 = (extra: any = {}) => ({
+    indFinal: 0,
+    cIndOp: '020101',
+    indDest: 0,
+    valores: {
+      trib: {
+        cClassTrib: '000001',
+        ...extra,
+      },
+    },
+  });
+
+  const dpsDaNt009 = (ibscbs: any = ibscbsDaNt009(), finNFSe: any = 0) => {
+    const base = (buildRequest().DPS as any).infDps;
+    return { DPS: { infDps: { ...base, finNFSe, IBSCBS: ibscbs } } } as any;
+  };
+
+  it('sem nfse.leiaute o padrao e o 1.01: IBSCBS com finNFSe dentro, trib.gIBSCBS e xDescServ depois de cTribMun', async () => {
+    const { service, getXmlObject } = buildService(ok());
+    const base = (buildRequest().DPS as any).infDps;
+
+    await service.Exec({
+      DPS: {
+        infDps: {
+          ...base,
+          IBSCBS: { finNFSe: 0, cIndOp: '020101', indDest: 0, valores: { trib: { gIBSCBS: { cClassTrib: '000001' } } } },
+        },
+      },
+    } as any);
+
+    const infDPS = getXmlObject().infDPS;
+
+    expect(infDPS.finNFSe).toBeUndefined();
+    expect(Object.keys(infDPS.IBSCBS)).toEqual(['finNFSe', 'cIndOp', 'indDest', 'valores']);
+    expect(Object.keys(infDPS.serv.cServ)).toEqual(['cTribNac', 'xDescServ', 'cNBS']);
+  });
+
+  it('monta finNFSe em infDPS (depois de tpEmit, antes de cLocEmi), xDescServ por ultimo e CST derivado de cClassTrib', async () => {
+    const { service, getXmlObject } = buildService(ok(), 'nt009-r1');
+
+    await service.Exec(dpsDaNt009());
+
+    const infDPS = getXmlObject().infDPS;
+
+    expect(Object.keys(infDPS)).toEqual([
+      'tpAmb', 'dhEmi', 'verAplic', 'serie', 'nDPS', 'dCompet', 'tpEmit', 'finNFSe',
+      'cLocEmi', 'prest', 'toma', 'serv', 'valores', 'IBSCBS', '$',
+    ]);
+    expect(infDPS.finNFSe).toBe(0);
+    expect(Object.keys(infDPS.serv.cServ)).toEqual(['cTribNac', 'cNBS', 'xDescServ']);
+    expect(Object.keys(infDPS.IBSCBS)).toEqual(['indFinal', 'cIndOp', 'indDest', 'valores']);
+    expect(infDPS.IBSCBS.finNFSe).toBeUndefined();
+    expect(infDPS.IBSCBS.valores.trib).toEqual({ CST: '000', cClassTrib: '000001' });
+  });
+
+  it('cIndOp e opcional e gIBSCBS so existe com cCredPres, gTribRegular ou gDif, nessa ordem', async () => {
+    const { service, getXmlObject } = buildService(ok(), 'nt009-r1');
+    const semCIndOp = ibscbsDaNt009({
+      gIBSCBS: {
+        gDif: { pDifUF: 10, pDifMun: 5, pDifCBS: 5 },
+        gTribRegular: { cClassTribReg: '200002' },
+        cCredPres: '01',
+      },
+    });
+    delete (semCIndOp as any).cIndOp;
+
+    await service.Exec(dpsDaNt009(semCIndOp, 1));
+
+    const ibscbs = getXmlObject().infDPS.IBSCBS;
+
+    expect(getXmlObject().infDPS.finNFSe).toBe(1);
+    expect(Object.keys(ibscbs)).toEqual(['indFinal', 'indDest', 'valores']);
+    expect(Object.keys(ibscbs.valores.trib)).toEqual(['CST', 'cClassTrib', 'gIBSCBS']);
+    expect(Object.keys(ibscbs.valores.trib.gIBSCBS)).toEqual(['cCredPres', 'gTribRegular', 'gDif']);
+    expect(ibscbs.valores.trib.gIBSCBS.gTribRegular).toEqual({ CSTReg: '200', cClassTribReg: '200002' });
+  });
+
+  it('o DPS no formato 1.01 e recusado com a lib configurada para a NT 009', async () => {
+    const { service } = buildService(ok(), 'nt009-r1');
+    const base = (buildRequest().DPS as any).infDps;
+
+    await expect(service.Exec({
+      DPS: {
+        infDps: {
+          ...base,
+          IBSCBS: { finNFSe: 0, cIndOp: '020101', indDest: 0, valores: { trib: { gIBSCBS: { cClassTrib: '000001' } } } },
+        },
+      },
+    } as any)).rejects.toThrow('infDps.finNFSe é obrigatório no leiaute NT 009');
+
+    await expect(service.Exec(dpsDaNt009({ finNFSe: 0, ...ibscbsDaNt009() }))).rejects.toThrow('IBSCBS.finNFSe é do leiaute 1.01');
+    await expect(service.Exec(dpsDaNt009(ibscbsDaNt009({ gIBSCBS: { cClassTrib: '000001' } })))).rejects.toThrow('formato do leiaute 1.01');
+    await expect(service.Exec(dpsDaNt009({ ...ibscbsDaNt009(), valores: { gReeRepRes: { documentos: [] }, trib: { cClassTrib: '000001' } } })))
+      .rejects.toThrow('gReeRepRes não existe no leiaute NT 009');
+  });
+
+  it('o DPS no formato da NT 009 e recusado com a lib no leiaute 1.01', async () => {
+    const { service } = buildService(ok());
+    const { service: explicito } = buildService(ok(), '1.01');
+
+    await expect(service.Exec(dpsDaNt009())).rejects.toThrow('infDps.finNFSe é do leiaute NT 009');
+    await expect(explicito.Exec(dpsDaNt009())).rejects.toThrow('infDps.finNFSe é do leiaute NT 009');
+
+    const base = (buildRequest().DPS as any).infDps;
+    await expect(service.Exec({ DPS: { infDps: { ...base, IBSCBS: ibscbsDaNt009() } } } as any))
+      .rejects.toThrow('IBSCBS no formato da NT 009');
+  });
+
+  it('leiaute desconhecido e erro, nao cai no 1.01 em silencio', async () => {
+    const { service } = buildService(ok(), 'nt009-r9');
+
+    await expect(service.Exec(buildRequest())).rejects.toThrow('nfse.leiaute desconhecido: "nt009-r9"');
   });
 });

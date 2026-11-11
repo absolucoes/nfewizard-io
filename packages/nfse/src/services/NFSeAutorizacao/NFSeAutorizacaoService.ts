@@ -15,7 +15,7 @@
  * along with Treeunfe DFe. If not, see <https://www.gnu.org/licenses/>.
  */
 import { XmlBuilder, Environment, Utility, logger, XmlParser, BaseNFSe } from '@nfewizard/shared';
-import { GerarConsultaImpl, NFSeAutorizacaoServiceImpl, SaveFilesImpl, GenericObject, LayoutDPS, LayoutNFSe, NFSe, NFSeAutorizacaoResponse, NFSeConfig } from '@nfewizard/types';
+import { GerarConsultaImpl, NFSeAutorizacaoServiceImpl, SaveFilesImpl, GenericObject, LayoutDPS, LayoutNFSe, NFSe, NFSeAutorizacaoResponse, NFSeConfig, LeiauteDPS } from '@nfewizard/types';
 import { AxiosInstance } from 'axios';
 import { Buffer } from 'buffer';
 import { gunzipSync, gzipSync } from 'zlib';
@@ -196,7 +196,63 @@ class NFSeAutorizacaoService extends BaseNFSe implements NFSeAutorizacaoServiceI
         return enderecoNormalizado;
     }
 
-    private normalizarServico(servico: any): any {
+    /**
+     * Leiaute configurado (nfse.leiaute). Sem configuração vale o 1.01, que é o
+     * vigente; valor desconhecido é erro, nunca cai no padrão em silêncio.
+     */
+    private leiauteConfigurado(): LeiauteDPS {
+        const config = this.environment.getConfig() as unknown as NFSeConfig;
+        const leiaute = config.nfse?.leiaute ?? '1.01';
+
+        if (leiaute !== '1.01' && leiaute !== 'nt009-r1') {
+            throw new Error(`nfse.leiaute desconhecido: "${String(leiaute)}". Valores aceitos: "1.01" e "nt009-r1".`);
+        }
+
+        return leiaute;
+    }
+
+    /**
+     * Recusa o DPS montado para o outro leiaute. Os dois leiautes diferem em
+     * onde fica o finNFSe, na forma do trib do IBSCBS e em gReeRepRes; misturar
+     * geraria um XML que o XSD da SEFIN rejeita, então o erro sai aqui, com o
+     * nome do campo e do leiaute, antes de assinar e transmitir.
+     */
+    private recusarDpsDoOutroLeiaute(infDps: any, leiaute: LeiauteDPS): void {
+        const ibscbs = infDps.IBSCBS;
+        const trib = ibscbs?.valores?.trib;
+
+        if (leiaute === '1.01') {
+            if (infDps.finNFSe !== undefined) {
+                throw new Error('infDps.finNFSe é do leiaute NT 009: com nfse.leiaute "1.01" ele fica dentro de IBSCBS. Configure nfse.leiaute "nt009-r1" ou monte o DPS no formato 1.01.');
+            }
+
+            if (ibscbs && (ibscbs.finNFSe === undefined || !trib?.gIBSCBS)) {
+                throw new Error('IBSCBS no formato da NT 009 (sem finNFSe dentro do grupo ou sem valores.trib.gIBSCBS) com nfse.leiaute "1.01". Configure nfse.leiaute "nt009-r1" ou monte o DPS no formato 1.01.');
+            }
+
+            return;
+        }
+
+        if (![0, 1, 2].includes(infDps.finNFSe)) {
+            throw new Error('infDps.finNFSe é obrigatório no leiaute NT 009 (0 regular, 1 crédito, 2 débito).');
+        }
+
+        if (ibscbs) {
+            if (ibscbs.finNFSe !== undefined) {
+                throw new Error('IBSCBS.finNFSe é do leiaute 1.01: na NT 009 o finNFSe fica em infDps. Monte o DPS no formato NT 009 ou use nfse.leiaute "1.01".');
+            }
+
+            if (ibscbs.valores?.gReeRepRes !== undefined) {
+                throw new Error('IBSCBS.valores.gReeRepRes não existe no leiaute NT 009. Monte o DPS no formato NT 009 ou use nfse.leiaute "1.01".');
+            }
+
+            if (!trib?.cClassTrib || trib.gIBSCBS?.cClassTrib !== undefined) {
+                throw new Error('IBSCBS.valores.trib no formato do leiaute 1.01 (cClassTrib dentro de gIBSCBS) com nfse.leiaute "nt009-r1". Na NT 009 o cClassTrib fica direto em trib.');
+            }
+        }
+    }
+
+    private normalizarServico(servico: any, leiaute: LeiauteDPS = '1.01'): any {
         const servicoNormalizado: any = {
             locPrest: servico.locPrest,
             cServ: {
@@ -208,7 +264,10 @@ class NFSeAutorizacaoService extends BaseNFSe implements NFSeAutorizacaoServiceI
             servicoNormalizado.cServ.cTribMun = servico.cServ.cTribMun;
         }
 
-        servicoNormalizado.cServ.xDescServ = servico.cServ.xDescServ;
+        // v1.01: xDescServ vem logo depois de cTribMun; NT 009: é o último de cServ.
+        if (leiaute === '1.01') {
+            servicoNormalizado.cServ.xDescServ = servico.cServ.xDescServ;
+        }
 
         if (servico.cServ.cNBS) {
             servicoNormalizado.cServ.cNBS = servico.cServ.cNBS;
@@ -216,6 +275,10 @@ class NFSeAutorizacaoService extends BaseNFSe implements NFSeAutorizacaoServiceI
 
         if (servico.cServ.cIntContrib) {
             servicoNormalizado.cServ.cIntContrib = servico.cServ.cIntContrib;
+        }
+
+        if (leiaute === 'nt009-r1') {
+            servicoNormalizado.cServ.xDescServ = servico.cServ.xDescServ;
         }
 
         if (servico.comExt) {
@@ -363,7 +426,91 @@ class NFSeAutorizacaoService extends BaseNFSe implements NFSeAutorizacaoServiceI
         return ibscbsNormalizado;
     }
 
-    private normalizarInfDps(infDps: any, ambiente: number): any {
+    /**
+     * IBSCBS no leiaute da NT 009 (release 1). Em relação ao 1.01: sem finNFSe
+     * (subiu para infDPS), cIndOp opcional, bensMoveis novo, trib com CST e
+     * cClassTrib no nível de trib e gIBSCBS opcional (cCredPres, gTribRegular,
+     * gDif), sem gReeRepRes. O CST sai dos 3 primeiros dígitos do cClassTrib,
+     * como no 1.01 (RN 627).
+     */
+    private normalizarIBSCBSNT009(ibscbs: any): any {
+        const normalizado: any = {};
+
+        if (ibscbs.indFinal !== undefined) {
+            normalizado.indFinal = ibscbs.indFinal;
+        }
+
+        if (ibscbs.cIndOp !== undefined && ibscbs.cIndOp !== null) {
+            normalizado.cIndOp = ibscbs.cIndOp;
+        }
+
+        if (ibscbs.tpOper !== undefined) {
+            normalizado.tpOper = ibscbs.tpOper;
+        }
+
+        if (ibscbs.gRefNFSe) {
+            normalizado.gRefNFSe = ibscbs.gRefNFSe;
+        }
+
+        if (ibscbs.tpEnteGov !== undefined) {
+            normalizado.tpEnteGov = ibscbs.tpEnteGov;
+        }
+
+        normalizado.indDest = ibscbs.indDest;
+
+        if (ibscbs.dest) {
+            normalizado.dest = {
+                ...ibscbs.dest,
+            };
+
+            if (ibscbs.dest.end) {
+                normalizado.dest.end = this.normalizarEndereco(ibscbs.dest.end);
+            }
+        }
+
+        if (ibscbs.imovel) {
+            normalizado.imovel = ibscbs.imovel;
+        }
+
+        if (ibscbs.bensMoveis?.length) {
+            normalizado.bensMoveis = ibscbs.bensMoveis;
+        }
+
+        const origem = ibscbs.valores.trib;
+        const trib: any = {
+            CST: this.derivarCstDoClassTrib(origem.cClassTrib),
+            cClassTrib: origem.cClassTrib,
+        };
+
+        const gIBSCBS: any = {};
+
+        if (origem.gIBSCBS?.cCredPres) {
+            gIBSCBS.cCredPres = origem.gIBSCBS.cCredPres;
+        }
+
+        if (origem.gIBSCBS?.gTribRegular) {
+            gIBSCBS.gTribRegular = {
+                CSTReg: this.derivarCstDoClassTrib(origem.gIBSCBS.gTribRegular.cClassTribReg),
+                cClassTribReg: origem.gIBSCBS.gTribRegular.cClassTribReg,
+            };
+        }
+
+        if (origem.gIBSCBS?.gDif) {
+            gIBSCBS.gDif = origem.gIBSCBS.gDif;
+        }
+
+        if (Object.keys(gIBSCBS).length > 0) {
+            trib.gIBSCBS = gIBSCBS;
+        }
+
+        normalizado.valores = { trib };
+
+        return normalizado;
+    }
+
+    private normalizarInfDps(infDps: any, ambiente: number, leiaute: LeiauteDPS = '1.01'): any {
+        this.recusarDpsDoOutroLeiaute(infDps, leiaute);
+
         const dhEmi = this.formatarDataHoraBrasilia(infDps.dhEmi);
         const dCompet = this.formatarDataCompetencia(infDps.dCompet);
 
@@ -383,6 +530,10 @@ class NFSeAutorizacaoService extends BaseNFSe implements NFSeAutorizacaoServiceI
 
         if (infDps.cMotivoEmisTI) {
             infDpsNormalizado.cMotivoEmisTI = infDps.cMotivoEmisTI;
+        }
+
+        if (leiaute === 'nt009-r1') {
+            infDpsNormalizado.finNFSe = infDps.finNFSe;
         }
 
         if (infDps.chNFSeRej) {
@@ -423,11 +574,13 @@ class NFSeAutorizacaoService extends BaseNFSe implements NFSeAutorizacaoServiceI
             }
         }
 
-        infDpsNormalizado.serv = this.normalizarServico(infDps.serv);
+        infDpsNormalizado.serv = this.normalizarServico(infDps.serv, leiaute);
         infDpsNormalizado.valores = infDps.valores;
 
         if (infDps.IBSCBS) {
-            infDpsNormalizado.IBSCBS = this.normalizarIBSCBS(infDps.IBSCBS);
+            infDpsNormalizado.IBSCBS = leiaute === 'nt009-r1'
+                ? this.normalizarIBSCBSNT009(infDps.IBSCBS)
+                : this.normalizarIBSCBS(infDps.IBSCBS);
         }
 
         return infDpsNormalizado;
@@ -439,12 +592,13 @@ class NFSeAutorizacaoService extends BaseNFSe implements NFSeAutorizacaoServiceI
     private gerarXmlDPS(dps: LayoutDPS): string {
         const config = this.environment.getConfig() as unknown as NFSeConfig;
         const ambiente = config.nfse.ambiente || 2;
+        const leiaute = this.leiauteConfigurado();
 
         // Gera o ID do DPS se não foi fornecido
         const idDPS = dps.infDps.Id || this.gerarIdDPS(dps);
 
         // Monta o objeto XML com a estrutura correta e com a ordem exigida pelo schema.
-        const infDPSObject: any = this.normalizarInfDps(dps.infDps, ambiente);
+        const infDPSObject: any = this.normalizarInfDps(dps.infDps, ambiente, leiaute);
         infDPSObject.$ = {
             Id: idDPS
         };
