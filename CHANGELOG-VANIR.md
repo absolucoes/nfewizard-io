@@ -9,6 +9,7 @@ Regra: correção sem teste que falhe sem ela não entra aqui.
 - **cte**: o CT-e do Vanir (QR Code, eventos, validação de XSD) foi integrado sobre o motor de CT-e do upstream. Onde os dois divergiam, vale o
   motor do upstream e as peças próprias do fork foram reaplicadas em cima. A API de evento plana (`CTEEventoCancCCeService`) do fork foi mantida.
 - **mdfe**: o pacote do fork entra como está no `vanir/mdfe`, com o DAMDFE em `danfe`.
+- **nfse**: o pacote upstream (`@nfewizard/nfse`, NFS-e Nacional, DPS v1.01) passa a ser publicado como `@absolucoes/nfewizard-nfse`, com o mesmo N dos demais, para o `apps/fiscal` do Vanir consumir sem tocar no registro público. Sem correção de código no motor: entra na lista de `scripts/vanir/publicar.mjs` e ganha `files` (`dist`, `README.md`) para o tarball não levar `.rollup.cache`, `src` nem configuração de build.
 - **danfe**: DACTE e DAMDFE vêm do fork; DANFE/NFC-e seguem do upstream.
 
 ## Correções
