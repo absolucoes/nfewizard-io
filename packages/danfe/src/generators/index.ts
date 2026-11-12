@@ -40,6 +40,8 @@ export { NFeGerarDanfe, NFCeGerarDanfe, NFSeGerarDanfe, NFSeGerarDanfeFromXml, N
 export type { NFSeGerarDanfeProps, NFSeGerarDanfeFromXmlProps };
 export type {
     InfNFSe,
+    NFSeDocAjusteBC,
+    NFSeDocDedRed,
     NFSeDocumento,
     NFSeEndereco,
     NFSeEnderecoNacional,
