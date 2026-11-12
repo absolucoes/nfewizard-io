@@ -1077,7 +1077,7 @@ class NFSeDanfeGenerator {
                 { label: 'Tipo', value: doc.tipo, flex: 2, fontSize: 6.5, grow: true },
                 { label: 'Documento', value: doc.referencia, flex: 3.4, fontSize: 6.5, grow: true },
                 { label: 'Emissão', value: doc.emissao, flex: 0.9, fontSize: 7 },
-                { label: 'Valor do documento', value: this.formatDecimal(doc.valorDocumento), flex: 1, align: 'right' },
+                { label: 'Valor do doc.', value: this.formatDecimal(doc.valorDocumento), flex: 1, align: 'right' },
                 { label: 'Valor deduzido', value: this.formatDecimal(doc.valorDeduzido), flex: 1, align: 'right' },
             ]);
         }
