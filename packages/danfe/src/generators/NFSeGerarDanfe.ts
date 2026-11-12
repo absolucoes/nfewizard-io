@@ -104,10 +104,50 @@ export interface NFSeTotTrib {
     indTotTrib?: Escalar;
 }
 
+/** Documento de dedução/redução do leiaute 1.01 (`docDedRed`). */
+export interface NFSeDocDedRed {
+    chNFSe?: string;
+    chNFe?: string;
+    NFSeMun?: { cMunNFSeMun?: Escalar; nNFSeMun?: Escalar; cVerifNFSeMun?: string };
+    NFNFS?: { nNFS?: Escalar; modNFS?: Escalar; serieNFS?: string };
+    nDocFisc?: string;
+    nDoc?: string;
+    tpDedRed?: Escalar;
+    xDescOutDed?: string;
+    dtEmiDoc?: string;
+    vDedutivelRedutivel?: Escalar;
+    vDeducaoReducao?: Escalar;
+    fornec?: { xNome?: string };
+}
+
+/** Documento de ajuste da base de cálculo da NT 009 (`docAjusteBC`). */
+export interface NFSeDocAjusteBC {
+    tpAjusteBC?: Escalar;
+    xTpAjusteBC?: string;
+    vTotDoc?: Escalar;
+    vAjusteAplic?: Escalar;
+    dtEmiDoc?: string;
+    dtCompDoc?: string;
+    dFeNacional?: { tipoChaveDFe?: Escalar; xTipoChaveDFe?: string; chaveDFe?: string };
+    docFiscalOutro?: { cMunDocFiscal?: Escalar; nDocFiscal?: string; xDocFiscal?: string };
+    docOutro?: { nDoc?: string; xDoc?: string };
+    fornec?: { xNome?: string };
+}
+
+/** O parser de XML devolve objeto quando há um nó e vetor quando há vários. */
+type UmOuVarios<T> = T | T[];
+
 export interface NFSeValoresDPS {
     vServPrest?: { vReceb?: Escalar; vServ?: Escalar };
     vDescCondIncond?: { vDescIncond?: Escalar; vDescCond?: Escalar };
-    vDedRed?: { pDR?: Escalar; vDR?: Escalar };
+    /** Leiaute 1.01: dedução/redução por valor, percentual ou documentos. */
+    vDedRed?: { pDR?: Escalar; vDR?: Escalar; documentos?: { docDedRed?: UmOuVarios<NFSeDocDedRed> } };
+    /** Leiaute da NT 009: ajuste da base de cálculo por percentual, valor ou documentos. */
+    vAjusteBC?: {
+        pAjusteBCISSQN?: Escalar;
+        vAjusteBCISSQN?: Escalar;
+        documentos?: { docAjusteBC?: UmOuVarios<NFSeDocAjusteBC> };
+    };
     trib?: {
         tribMun?: NFSeTribMun;
         tribFed?: NFSeTribFed;
@@ -132,6 +172,8 @@ export interface NFSeInfDPS {
     tpEmit?: Escalar;
     cLocEmi?: string;
     subst?: { chSubstda?: string; cMotivo?: Escalar; xMotivo?: string };
+    /** Só existe na DPS da NT 009: é o que diferencia os dois leiautes no XML. */
+    finNFSe?: Escalar;
     prest?: NFSePessoa;
     toma?: NFSePessoa;
     interm?: NFSePessoa;
@@ -141,6 +183,7 @@ export interface NFSeInfDPS {
 
 export interface NFSeValoresNota {
     vCalcDR?: Escalar;
+    vCalcAjusteBCISSQN?: Escalar;
     tpBM?: Escalar;
     vCalcBM?: Escalar;
     vBC?: Escalar;
@@ -237,6 +280,81 @@ type DanfseCell = {
 };
 
 const URL_CONSULTA_NACIONAL = 'https://www.nfse.gov.br/consultapublica';
+
+/** `tpRetPisCofins` do leiaute 1.01 (XSD `TCTribOutrosPisCofins`): só retido ou não retido. */
+const TP_RET_PIS_COFINS_1_01: Record<string, string> = {
+    '1': 'PIS/COFINS RETIDOS',
+    '2': 'PIS/COFINS NÃO RETIDOS',
+};
+
+/** `tpRetPisCofins` da NT 009 (release 1): dez combinações, a CSLL entra no código. */
+const TP_RET_PIS_COFINS_NT009: Record<string, string> = {
+    '0': 'PIS/COFINS/CSLL NÃO RETIDOS',
+    '1': 'PIS/COFINS RETIDOS',
+    '2': 'PIS/COFINS NÃO RETIDOS',
+    '3': 'PIS/COFINS/CSLL RETIDOS',
+    '4': 'PIS/COFINS RETIDOS, CSLL NÃO RETIDO',
+    '5': 'PIS RETIDO, COFINS/CSLL NÃO RETIDOS',
+    '6': 'COFINS RETIDO, PIS/CSLL NÃO RETIDOS',
+    '7': 'PIS NÃO RETIDO, COFINS/CSLL RETIDOS',
+    '8': 'PIS/COFINS NÃO RETIDOS, CSLL RETIDO',
+    '9': 'COFINS NÃO RETIDO, PIS/CSLL RETIDOS',
+};
+
+/** `tpDedRed` do leiaute 1.01. */
+const TP_DED_RED_1_01: Record<string, string> = {
+    '1': 'ALIMENTAÇÃO E BEBIDAS/FRIGOBAR',
+    '2': 'MATERIAIS',
+    '3': 'PRODUÇÃO EXTERNA',
+    '4': 'REEMBOLSO DE DESPESAS',
+    '5': 'REPASSE CONSORCIADO',
+    '6': 'REPASSE PLANO DE SAÚDE',
+    '7': 'SERVIÇOS',
+    '8': 'SUBEMPREITADA DE MÃO DE OBRA',
+    '9': 'PROFISSIONAL PARCEIRO',
+    '99': 'OUTRAS DEDUÇÕES',
+};
+
+/** `tpAjusteBC` da NT 009. */
+const TP_AJUSTE_BC_NT009: Record<string, string> = {
+    '2': 'MATERIAIS',
+    '5': 'REPASSE CONSORCIADO',
+    '6': 'REPASSE PLANO DE SAÚDE',
+    '7': 'SERVIÇOS',
+    '8': 'SUBEMPREITADA DE MÃO DE OBRA',
+    '9': 'PROFISSIONAL PARCEIRO',
+    '99': 'OUTRAS DEDUÇÕES EXCLUSIVAS DO ISSQN',
+    '101': 'REPASSE DE REMUNERAÇÃO POR INTERMEDIAÇÃO DE IMÓVEIS A DEMAIS CORRETORES',
+    '102': 'REPASSE A FORNECEDOR DE FORNECIMENTO INTERMEDIADO POR AGÊNCIA DE TURISMO',
+    '103': 'REEMBOLSO A AGÊNCIA DE PROPAGANDA: PRODUÇÃO EXTERNA POR CONTA E ORDEM DE TERCEIRO',
+    '104': 'REEMBOLSO A AGÊNCIA DE PROPAGANDA: MÍDIA POR CONTA E ORDEM DE TERCEIRO',
+    '105': 'GLOSA DE SERVIÇOS DE SAÚDE',
+    '199': 'OUTROS REEMBOLSOS OU RESSARCIMENTOS POR CONTA E ORDEM DE TERCEIRO',
+};
+
+/** `tpBM` do grupo `valores` da NFS-e (tipo do benefício municipal aplicado). */
+const TP_BM: Record<string, string> = {
+    '1': 'ISENÇÃO',
+    '2': 'REDUÇÃO DA BC EM PERCENTUAL',
+    '3': 'REDUÇÃO DA BC EM VALOR',
+    '4': 'ALÍQUOTA DIFERENCIADA',
+};
+
+/** Linha de documento de dedução/redução já normalizada entre os dois leiautes. */
+interface DocumentoDeducaoImpresso {
+    tipo: string;
+    referencia: string;
+    emissao: string;
+    valorDocumento: Escalar;
+    valorDeduzido: Escalar;
+}
+
+/** Dedução/redução da base do ISSQN já normalizada entre os dois leiautes. */
+interface DeducaoImpressa {
+    percentual?: Escalar;
+    valor: number;
+    documentos: DocumentoDeducaoImpresso[];
+}
 
 /**
  * Gerador da DANFSe (Documento Auxiliar da NFS-e) em PDF a partir do JSON da
@@ -411,6 +529,112 @@ class NFSeDanfeGenerator {
         const key = this.str(value);
         if (!key) return '';
         return mapa[key] ? `${key} - ${mapa[key]}` : key;
+    }
+
+    formatData(value: Escalar): string {
+        const text = this.str(value);
+        if (!text) return '';
+        try {
+            return format(parseISO(text), 'dd/MM/yyyy');
+        } catch {
+            return text;
+        }
+    }
+
+    private lista<T>(valor: UmOuVarios<T> | undefined | null): T[] {
+        if (valor === undefined || valor === null || (valor as unknown) === '') return [];
+        return Array.isArray(valor) ? valor : [valor];
+    }
+
+    /**
+     * A DPS da NT 009 é a única com `finNFSe`, `vAjusteBC` e, na NFS-e, `vCalcAjusteBCISSQN`;
+     * qualquer um deles basta para saber qual dicionário de códigos usar.
+     */
+    private get leiauteNt009(): boolean {
+        return this.infDPS.finNFSe !== undefined
+            || this.infDPS.valores?.vAjusteBC !== undefined
+            || this.infNFSe.valores?.vCalcAjusteBCISSQN !== undefined;
+    }
+
+    /** Descrição do `tpRetPisCofins` no leiaute em vigor na nota; fora do domínio, só o código. */
+    private getDescricaoTpRetPisCofins(value: Escalar): string {
+        return this.getDescricao(this.leiauteNt009 ? TP_RET_PIS_COFINS_NT009 : TP_RET_PIS_COFINS_1_01, value);
+    }
+
+    private referenciaDocDedRed(doc: NFSeDocDedRed): string {
+        if (this.str(doc.chNFSe)) return `NFS-e ${this.str(doc.chNFSe)}`;
+        if (this.str(doc.chNFe)) return `NF-e ${this.str(doc.chNFe)}`;
+        if (doc.NFSeMun) {
+            const n = doc.NFSeMun;
+            return `NFS-e municipal nº ${this.str(n.nNFSeMun)} (município ${this.str(n.cMunNFSeMun)}, verificação ${this.str(n.cVerifNFSeMun)})`;
+        }
+        if (doc.NFNFS) {
+            const n = doc.NFNFS;
+            return `NF/NFS nº ${this.str(n.nNFS)}, modelo ${this.str(n.modNFS)}, série ${this.str(n.serieNFS)}`;
+        }
+        if (this.str(doc.nDocFisc)) return `Documento fiscal nº ${this.str(doc.nDocFisc)}`;
+        if (this.str(doc.nDoc)) return `Documento nº ${this.str(doc.nDoc)}`;
+        return '';
+    }
+
+    private referenciaDocAjusteBC(doc: NFSeDocAjusteBC): string {
+        if (doc.dFeNacional) {
+            const d = doc.dFeNacional;
+            const nome = this.str(d.xTipoChaveDFe) || 'DF-e';
+            return `${nome} ${this.str(d.chaveDFe)}`;
+        }
+        if (doc.docFiscalOutro) {
+            const d = doc.docFiscalOutro;
+            return `${this.str(d.xDocFiscal)} nº ${this.str(d.nDocFiscal)} (município ${this.str(d.cMunDocFiscal)})`;
+        }
+        if (doc.docOutro) {
+            return `${this.str(doc.docOutro.xDoc)} nº ${this.str(doc.docOutro.nDoc)}`;
+        }
+        return '';
+    }
+
+    /** Une o que a DPS informou (valor, percentual, documentos) ao que a Sefin calculou na NFS-e. */
+    private getDeducao(): DeducaoImpressa {
+        const dps = this.infDPS.valores;
+        const nota = this.infNFSe.valores;
+        const nt009 = this.leiauteNt009;
+
+        const documentos: DocumentoDeducaoImpresso[] = nt009
+            ? this.lista(dps?.vAjusteBC?.documentos?.docAjusteBC).map((doc) => {
+                const codigo = this.str(doc.tpAjusteBC);
+                const tipo = this.getDescricao(TP_AJUSTE_BC_NT009, codigo);
+                const complemento = this.str(doc.xTpAjusteBC);
+                return {
+                    tipo: complemento ? `${tipo} - ${complemento}` : tipo,
+                    referencia: this.referenciaDocAjusteBC(doc),
+                    emissao: this.formatData(doc.dtEmiDoc),
+                    valorDocumento: doc.vTotDoc,
+                    valorDeduzido: doc.vAjusteAplic,
+                };
+            })
+            : this.lista(dps?.vDedRed?.documentos?.docDedRed).map((doc) => {
+                const codigo = this.str(doc.tpDedRed);
+                const tipo = this.getDescricao(TP_DED_RED_1_01, codigo);
+                const complemento = this.str(doc.xDescOutDed);
+                return {
+                    tipo: complemento ? `${tipo} - ${complemento}` : tipo,
+                    referencia: this.referenciaDocDedRed(doc),
+                    emissao: this.formatData(doc.dtEmiDoc),
+                    valorDocumento: doc.vDedutivelRedutivel,
+                    valorDeduzido: doc.vDeducaoReducao,
+                };
+            });
+
+        const informado = nt009 ? dps?.vAjusteBC?.vAjusteBCISSQN : dps?.vDedRed?.vDR;
+        const calculado = nt009 ? nota?.vCalcAjusteBCISSQN : nota?.vCalcDR;
+        const percentual = nt009 ? dps?.vAjusteBC?.pAjusteBCISSQN : dps?.vDedRed?.pDR;
+
+        let valor: number;
+        if (this.str(informado)) valor = this.parseDecimal(informado);
+        else if (this.str(calculado)) valor = this.parseDecimal(calculado);
+        else valor = documentos.reduce((soma, doc) => soma + this.parseDecimal(doc.valorDeduzido), 0);
+
+        return { percentual: this.str(percentual) ? percentual : undefined, valor, documentos };
     }
 
     /* ------------------------------------------------------------------ *
@@ -781,8 +1005,21 @@ class NFSeDanfeGenerator {
             { label: 'Desconto condicionado', value: this.formatDecimal(valores?.vDescCondIncond?.vDescCond), flex: 1, align: 'right' },
         ]);
 
+        const deducao = this.getDeducao();
+        const deducaoCells: DanfseCell[] = [
+            { label: 'Deduções / Reduções', value: this.formatDecimal(deducao.valor), flex: 1, align: 'right' },
+        ];
+        if (deducao.percentual !== undefined) {
+            deducaoCells.push({
+                label: 'Dedução / redução (%)',
+                value: this.formatDecimal(deducao.percentual, 2, 4),
+                flex: 0.8,
+                align: 'right',
+            });
+        }
+
         this.drawRow([
-            { label: 'Deduções / Reduções', value: this.formatDecimal(valores?.vDedRed?.vDR), flex: 1, align: 'right' },
+            ...deducaoCells,
             { label: 'Base de cálculo', value: this.formatDecimal(valoresNota?.vBC), flex: 1, align: 'right' },
             {
                 label: 'Alíquota (%)',
@@ -793,6 +1030,57 @@ class NFSeDanfeGenerator {
             { label: 'ISSQN apurado', value: this.formatDecimal(valoresNota?.vISSQN), flex: 1, align: 'right' },
             { label: 'Total de retenções', value: this.formatDecimal(valoresNota?.vTotalRet), flex: 1, align: 'right' },
         ]);
+
+        this._buildBeneficioMunicipal();
+        this._buildDocumentosDeducao(deducao.documentos);
+    }
+
+    /** Benefício municipal: o que o emitente pediu (`tribMun.BM`) e o que a Sefin aplicou (`valores`). */
+    _buildBeneficioMunicipal() {
+        const bm = this.infDPS.valores?.trib?.tribMun?.BM;
+        const valoresNota = this.infNFSe.valores;
+        const tpBM = this.str(valoresNota?.tpBM);
+        const vCalcBM = this.str(valoresNota?.vCalcBM);
+        if (!bm && !tpBM && !vCalcBM) return;
+
+        const cells: DanfseCell[] = [
+            { label: 'Benefício municipal (nº)', value: this.str(bm?.nBM), flex: 1.4, fontSize: 7 },
+            { label: 'Tipo do benefício', value: this.getDescricao(TP_BM, tpBM), flex: 1.6, fontSize: 7, grow: true },
+        ];
+        if (this.str(bm?.pRedBCBM)) {
+            cells.push({
+                label: 'Redução da base informada (%)',
+                value: this.formatDecimal(bm?.pRedBCBM, 2, 4),
+                flex: 1,
+                align: 'right',
+            });
+        }
+        if (this.str(bm?.vRedBCBM)) {
+            cells.push({
+                label: 'Redução da base informada (R$)',
+                value: this.formatDecimal(bm?.vRedBCBM),
+                flex: 1,
+                align: 'right',
+            });
+        }
+        cells.push({ label: 'Valor da redução (R$)', value: this.formatDecimal(vCalcBM), flex: 1, align: 'right' });
+        this.drawRow(cells);
+    }
+
+    /** Uma linha por documento que sustenta a dedução/redução da base. */
+    _buildDocumentosDeducao(documentos: DocumentoDeducaoImpresso[]) {
+        if (documentos.length === 0) return;
+
+        this.sectionTitle('DOCUMENTOS DE DEDUÇÃO / REDUÇÃO DA BASE');
+        for (const doc of documentos) {
+            this.drawRow([
+                { label: 'Tipo', value: doc.tipo, flex: 2, fontSize: 6.5, grow: true },
+                { label: 'Documento', value: doc.referencia, flex: 3.4, fontSize: 6.5, grow: true },
+                { label: 'Emissão', value: doc.emissao, flex: 0.9, fontSize: 7 },
+                { label: 'Valor do doc.', value: this.formatDecimal(doc.valorDocumento), flex: 1, align: 'right' },
+                { label: 'Valor deduzido', value: this.formatDecimal(doc.valorDeduzido), flex: 1, align: 'right' },
+            ]);
+        }
     }
 
     _buildTributacaoFederal() {
@@ -809,12 +1097,29 @@ class NFSeDanfeGenerator {
             { label: 'IRRF', value: this.formatDecimal(tribFed.vRetIRRF), align: 'right' },
             { label: 'CSLL', value: this.formatDecimal(tribFed.vRetCSLL), align: 'right' },
             { label: 'CP / INSS', value: this.formatDecimal(tribFed.vRetCP), align: 'right' },
-            {
-                label: 'Retenção PIS/COFINS',
-                value: this.getDescricao({ '1': 'RETIDO', '2': 'NÃO RETIDO' }, piscofins?.tpRetPisCofins),
-                fontSize: 6.5,
-            },
+            { label: 'Total de retenções', value: this.formatDecimal(this.infNFSe.valores?.vTotalRet), align: 'right' },
         ]);
+
+        // O código de retenção pode descrever até três tributos ("PIS RETIDO, COFINS/CSLL NÃO RETIDOS"):
+        // ganha linha própria, larga o bastante para não cortar o texto.
+        const retencao = this.getDescricaoTpRetPisCofins(piscofins?.tpRetPisCofins);
+        const cells: DanfseCell[] = [];
+        if (this.str(piscofins?.CST)) {
+            cells.push({ label: 'CST PIS/COFINS', value: this.str(piscofins?.CST), flex: 0.8 });
+        }
+        if (this.str(piscofins?.vBCPisCofins)) {
+            cells.push({ label: 'Base PIS/COFINS', value: this.formatDecimal(piscofins?.vBCPisCofins), flex: 1, align: 'right' });
+        }
+        if (this.str(piscofins?.pAliqPis)) {
+            cells.push({ label: 'Alíquota PIS (%)', value: this.formatDecimal(piscofins?.pAliqPis, 2, 4), flex: 0.9, align: 'right' });
+        }
+        if (this.str(piscofins?.pAliqCofins)) {
+            cells.push({ label: 'Alíquota COFINS (%)', value: this.formatDecimal(piscofins?.pAliqCofins, 2, 4), flex: 0.9, align: 'right' });
+        }
+        if (retencao) {
+            cells.push({ label: 'Retenção PIS/COFINS/CSLL', value: retencao, flex: 3, fontSize: 7, grow: true });
+        }
+        if (cells.length > 0) this.drawRow(cells);
     }
 
     _buildTotais() {
@@ -824,7 +1129,7 @@ class NFSeDanfeGenerator {
         const vServ = this.parseDecimal(valores?.vServPrest?.vServ);
         const vDescontos = this.parseDecimal(valores?.vDescCondIncond?.vDescIncond)
             + this.parseDecimal(valores?.vDescCondIncond?.vDescCond)
-            + this.parseDecimal(valores?.vDedRed?.vDR);
+            + this.getDeducao().valor;
 
         this.sectionTitle('VALORES DA NFS-e');
 
